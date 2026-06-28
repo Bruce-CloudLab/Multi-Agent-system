@@ -76,7 +76,7 @@ def test_s02_missing_identity_asks_then_completes_permission_path_after_identity
         {
             "scenario_id": "S02",
             "user_input": "salary query request",
-            "operator": {"employee_id": "EMP-1001", "name": "Zhang San"},
+            "operator": {"employee_id": "EMP-HR-PAY-0001", "name": "Test Payroll Reader"},
         }
     )
 

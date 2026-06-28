@@ -66,7 +66,7 @@ Run the full test suite:
 Current verified baseline:
 
 ```text
-70 passed
+73 passed
 ```
 
 ## Run The Demo Harness
@@ -109,6 +109,11 @@ The root page includes a browser Agent input backed by the existing LangGraph.
 It also shows all S01-S15 designed scenarios, marks which ones are currently
 runnable, and lets runnable scenarios execute through the local mock runtime.
 
+The default Agent input employee id is `EMP-IT-DEV-0001`. It resolves as an IT
+developer but does not have salary-preview permission, so salary requests route
+to manual review without loading payroll data. Use `EMP-HR-PAY-0001` when you
+want to exercise the authorized payroll-reader salary path.
+
 Implemented endpoints:
 
 ```text
@@ -125,7 +130,13 @@ POST /scenario
 `POST /agent/query` accepts:
 
 ```json
-{"message": "查一下我的工资", "employee_id": "EMP-IT-DEV-0001"}
+{"message": "salary query request", "employee_id": "EMP-IT-DEV-0001"}
+```
+
+Authorized salary smoke example:
+
+```json
+{"message": "salary query request", "employee_id": "EMP-HR-PAY-0001"}
 ```
 
 `POST /scenario` accepts:

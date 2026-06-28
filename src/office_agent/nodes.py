@@ -331,6 +331,8 @@ def permission_audit_node(state: OfficeAgentState) -> dict[str, Any]:
         request_type=request_type,
         risk_level=risk_level,
     )
+    permission_status = permission_result["data"].get("permission_status")
+    permission_allowed = permission_status == "allowed"
 
     identity_check = dict(state.get("identity_check", {}))
     identity_check.update(
@@ -343,7 +345,16 @@ def permission_audit_node(state: OfficeAgentState) -> dict[str, Any]:
 
     return {
         "identity_check": identity_check,
-        "blocked_reason": "",
+        "blocked_reason": "" if permission_allowed else "permission_denied",
+        "next_action": {}
+        if permission_allowed
+        else {
+            "type": "manual_review",
+            "reason": permission_result["data"].get(
+                "denial_reason",
+                "permission_denied",
+            ),
+        },
         "permission_context": permission_result["data"],
         "audit_context": audit_result["data"],
         "tool_results": {
@@ -357,17 +368,25 @@ def permission_audit_node(state: OfficeAgentState) -> dict[str, Any]:
         "gate_checks": [
             {
                 "gate": "permission_audit",
-                "status": "passed",
-                "reason": "高风险请求已完成权限校验和审计记录。",
+                "status": "passed" if permission_allowed else "blocked",
+                "reason": "high_risk_permission_and_audit_completed"
+                if permission_allowed
+                else permission_result["data"].get(
+                    "denial_reason",
+                    "permission_denied",
+                ),
             }
         ],
         "trace_events": [
             _trace(
                 "permission_audit_node",
-                "permission_and_audit_recorded",
+                "permission_and_audit_recorded"
+                if permission_allowed
+                else "permission_denied_audit_recorded",
                 {
                     "permission_evidence": permission_result["evidence_ref"],
                     "audit_evidence": audit_result["evidence_ref"],
+                    "permission_status": permission_status,
                 },
             )
         ],

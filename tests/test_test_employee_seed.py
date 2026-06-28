@@ -6,6 +6,10 @@ def evidence_refs(state):
     return {item["evidence_ref"] for item in state.get("evidence_refs", [])}
 
 
+def trace_nodes(state):
+    return [event["node"] for event in state.get("trace_events", [])]
+
+
 def test_it_developer_test_employee_profile_is_available():
     result = get_employee_profile(TEST_EMPLOYEE_ID)
     profile = result["data"]
@@ -21,7 +25,7 @@ def test_it_developer_test_employee_profile_is_available():
     assert {"employee", "it_staff", "developer"}.issubset(set(profile["roles"]))
 
 
-def test_it_developer_test_employee_resolves_identity_without_bypassing_permission():
+def test_it_developer_test_employee_resolves_identity_without_bypassing_salary_permission():
     app = build_graph()
 
     state = app.invoke(
@@ -45,8 +49,11 @@ def test_it_developer_test_employee_resolves_identity_without_bypassing_permissi
     assert state["domain_context"]["employee_profile"]["employee_id"] == TEST_EMPLOYEE_ID
 
     assert state["permission_context"]["employee_id"] == TEST_EMPLOYEE_ID
-    assert state["permission_context"]["permission_status"] == "allowed"
-    assert "PERMISSION-CHECK-SALARY-0001" in evidence_refs(state)
+    assert state["permission_context"]["permission_status"] == "denied"
+    assert state["blocked_reason"] == "permission_denied"
+    assert "PERMISSION-CHECK-SALARY-DENIED-0001" in evidence_refs(state)
     assert "AUDIT-LOG-SALARY-0001" in evidence_refs(state)
-    assert "HR-SALARY-PREVIEW-0001" in evidence_refs(state)
+    assert "HR-SALARY-PREVIEW-0001" not in evidence_refs(state)
     assert "EMPLOYEE-PROFILE-IT-DEV-0001" not in evidence_refs(state)
+    assert "payroll_query_node" not in trace_nodes(state)
+    assert "manual_review_node" in trace_nodes(state)

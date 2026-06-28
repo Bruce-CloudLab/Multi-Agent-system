@@ -113,6 +113,24 @@ def _display_response_for_scenario(scenario_id: str, state: dict[str, Any]) -> t
 
     if scenario_id == "S02":
         salary = context.get("salary_query", {})
+        permission = state.get("permission_context", {})
+        permission_status = permission.get("permission_status")
+        if permission_status != "allowed" or not salary:
+            reason = permission.get("denial_reason") or state.get(
+                "blocked_reason",
+                "permission_denied",
+            )
+            english = (
+                "Permission check did not allow salary preview disclosure. "
+                "No salary data was loaded. Audit was recorded. "
+                f"Reason: {reason}. Business evidence: {evidence}."
+            )
+            chinese = (
+                "权限校验未通过，系统没有读取或披露薪资预览。"
+                f"审计已记录。原因：{reason}。业务证据：{evidence}。"
+            )
+            return english, chinese, "zh-CN"
+
         month = salary.get("target_month", "unknown_month")
         gross_salary = salary.get("gross_salary", "unknown")
         net_salary = salary.get("estimated_net_salary", "unknown")

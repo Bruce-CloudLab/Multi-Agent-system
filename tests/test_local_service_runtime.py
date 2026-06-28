@@ -179,7 +179,7 @@ def test_scenario_endpoint_rejects_malformed_json():
     assert data["error"]["code"] == "invalid_json"
 
 
-def test_agent_query_endpoint_runs_salary_request_with_default_test_employee():
+def test_agent_query_endpoint_denies_salary_request_with_default_test_employee():
     response = dispatch_request(
         "POST",
         "/agent/query",
@@ -195,10 +195,40 @@ def test_agent_query_endpoint_runs_salary_request_with_default_test_employee():
     assert summary["risk_level"] == "high"
     assert "resolve_identity_node" in summary["trace_nodes"]
     assert "permission_audit_node" in summary["trace_nodes"]
+    assert "manual_review_node" in summary["trace_nodes"]
+    assert "payroll_query_node" not in summary["trace_nodes"]
+    assert "PERMISSION-CHECK-SALARY-DENIED-0001" in summary["evidence_refs"]
+    assert "AUDIT-LOG-SALARY-0001" in summary["evidence_refs"]
+    assert "HR-SALARY-PREVIEW-0001" not in summary["evidence_refs"]
+    assert "EMPLOYEE-PROFILE-IT-DEV-0001" not in summary["evidence_refs"]
+    assert "permission_audit=blocked" in summary["gate_checks"]
+    assert "did not allow salary preview disclosure" in summary["display_response"]
+    assert "18000" not in summary["display_response"]
+    assert "14250" not in summary["display_response"]
+
+
+def test_agent_query_endpoint_allows_salary_request_with_payroll_reader():
+    response = dispatch_request(
+        "POST",
+        "/agent/query",
+        b'{"message":"salary query request","employee_id":"EMP-HR-PAY-0001"}',
+    )
+    data = payload(response)
+    summary = data["summary"]
+
+    assert response.status == 200
+    assert data["entry"] == "agent_query"
+    assert data["employee_id"] == "EMP-HR-PAY-0001"
+    assert summary["request_type"] == "salary_query"
+    assert summary["risk_level"] == "high"
+    assert "permission_audit_node" in summary["trace_nodes"]
+    assert "payroll_query_node" in summary["trace_nodes"]
     assert "PERMISSION-CHECK-SALARY-0001" in summary["evidence_refs"]
     assert "AUDIT-LOG-SALARY-0001" in summary["evidence_refs"]
     assert "HR-SALARY-PREVIEW-0001" in summary["evidence_refs"]
-    assert "EMPLOYEE-PROFILE-IT-DEV-0001" not in summary["evidence_refs"]
+    assert "permission_audit=passed" in summary["gate_checks"]
+    assert "18000" in summary["display_response"]
+    assert "14250" in summary["display_response"]
 
 
 def test_agent_query_endpoint_runs_policy_request_from_natural_language():

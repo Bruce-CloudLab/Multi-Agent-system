@@ -12,9 +12,43 @@ TEST_EMPLOYEE_PROFILE: dict[str, Any] = {
     "job_family": "Engineering",
     "roles": ["employee", "it_staff", "developer"],
     "employment_status": "active",
+    "profile_evidence_ref": "EMPLOYEE-PROFILE-IT-DEV-0001",
 }
+
+PAYROLL_TEST_EMPLOYEE_ID = "EMP-HR-PAY-0001"
+PAYROLL_TEST_EMPLOYEE_PROFILE: dict[str, Any] = {
+    "employee_id": PAYROLL_TEST_EMPLOYEE_ID,
+    "display_name": "Test Payroll Reader",
+    "department": "HR Department",
+    "position": "Payroll Specialist",
+    "job_family": "Human Resources",
+    "roles": ["employee", "hr_staff", "payroll_reader"],
+    "employment_status": "active",
+    "profile_evidence_ref": "EMPLOYEE-PROFILE-HR-PAY-0001",
+}
+
+SALARY_PERMISSION_ROLES = {"payroll_reader"}
+
+
+def _payroll_reader_profile(employee_id: str, display_name: str) -> dict[str, Any]:
+    return {
+        "employee_id": employee_id,
+        "display_name": display_name,
+        "department": "HR Department",
+        "position": "Payroll Specialist",
+        "job_family": "Human Resources",
+        "roles": ["employee", "hr_staff", "payroll_reader"],
+        "employment_status": "active",
+        "profile_evidence_ref": f"EMPLOYEE-PROFILE-{employee_id}",
+    }
+
+
 EMPLOYEE_PROFILES: dict[str, dict[str, Any]] = {
     TEST_EMPLOYEE_ID: TEST_EMPLOYEE_PROFILE,
+    PAYROLL_TEST_EMPLOYEE_ID: PAYROLL_TEST_EMPLOYEE_PROFILE,
+    "EMP-HR-3001": _payroll_reader_profile("EMP-HR-3001", "Salary User A"),
+    "EMP-HR-3004": _payroll_reader_profile("EMP-HR-3004", "Salary User B"),
+    "EMP-HR-3007": _payroll_reader_profile("EMP-HR-3007", "Salary User C"),
 }
 
 
@@ -34,8 +68,11 @@ def get_employee_profile(employee_id: str) -> dict[str, Any]:
         evidence_ref = f"EMPLOYEE-PROFILE-{employee_id}"
     else:
         profile = dict(profile)
+        evidence_ref = profile.pop(
+            "profile_evidence_ref",
+            f"EMPLOYEE-PROFILE-{employee_id}",
+        )
         profile["profile_status"] = "seeded"
-        evidence_ref = "EMPLOYEE-PROFILE-IT-DEV-0001"
 
     return {
         "status": "success",
@@ -71,6 +108,37 @@ def check_permission(employee_id: str, request_type: str) -> dict[str, Any]:
         "reception_plan_upload": "important_reception_write",
         "project_inquiry": "project_inquiry_create",
     }
+    if request_type == "salary_query":
+        profile = EMPLOYEE_PROFILES.get(employee_id, {})
+        roles = set(profile.get("roles", []))
+        matched_roles = sorted(roles.intersection(SALARY_PERMISSION_ROLES))
+        if matched_roles:
+            return {
+                "status": "success",
+                "data": {
+                    "employee_id": employee_id,
+                    "request_type": request_type,
+                    "permission_status": "allowed",
+                    "permission_scope": scope_by_type[request_type],
+                    "permission_policy": "salary_query_requires_payroll_reader",
+                    "matched_roles": matched_roles,
+                },
+                "evidence_ref": evidence_by_type[request_type],
+            }
+
+        return {
+            "status": "success",
+            "data": {
+                "employee_id": employee_id,
+                "request_type": request_type,
+                "permission_status": "denied",
+                "permission_scope": "none",
+                "permission_policy": "salary_query_requires_payroll_reader",
+                "denial_reason": "operator_missing_payroll_reader_role",
+            },
+            "evidence_ref": "PERMISSION-CHECK-SALARY-DENIED-0001",
+        }
+
     return {
         "status": "success",
         "data": {

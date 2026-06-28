@@ -66,19 +66,27 @@ be executed from the page; not-connected scenarios are shown as disabled entries
 so the runtime does not pretend to execute paths that are not wired into the
 current graph.
 
-## Test Operator
+## Test Operators
 
-The local mock runtime includes one deterministic test employee profile:
+The local mock runtime includes deterministic test employee profiles:
 
 ```text
 employee_id: EMP-IT-DEV-0001
 department: IT Department
 position: Software Developer
 roles: employee, it_staff, developer
+salary_query: denied
+
+employee_id: EMP-HR-PAY-0001
+department: HR Department
+position: Payroll Specialist
+roles: employee, hr_staff, payroll_reader
+salary_query: allowed
 ```
 
-This id is seed data for local graph tests. It is not a login account or an
-authentication token, and it does not bypass permission or audit gates.
+These ids are seed data for local graph tests. They are not login accounts or
+authentication tokens. A resolved identity does not bypass permission or audit
+gates.
 
 ## Endpoint Examples
 
@@ -97,7 +105,19 @@ Invoke-RestMethod -Uri http://127.0.0.1:8765/demo/report
 Ask the Agent entry:
 
 ```powershell
-$json = '{"message":"查一下我的工资","employee_id":"EMP-IT-DEV-0001"}'
+$json = '{"message":"salary query request","employee_id":"EMP-IT-DEV-0001"}'
+$body = [System.Text.Encoding]::UTF8.GetBytes($json)
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8765/agent/query `
+  -Method Post `
+  -ContentType 'application/json; charset=utf-8' `
+  -Body $body
+```
+
+Authorized payroll-reader salary smoke:
+
+```powershell
+$json = '{"message":"salary query request","employee_id":"EMP-HR-PAY-0001"}'
 $body = [System.Text.Encoding]::UTF8.GetBytes($json)
 Invoke-RestMethod `
   -Uri http://127.0.0.1:8765/agent/query `

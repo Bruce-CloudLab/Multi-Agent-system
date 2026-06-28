@@ -11,7 +11,7 @@ Run:
 Current verified baseline:
 
 ```text
-70 passed
+73 passed
 ```
 
 ## Test Areas
@@ -30,6 +30,8 @@ Current verified baseline:
 - Scenario catalog and browser simulation console.
 - Test employee seed identity profile.
 - Agent query browser/runtime entry.
+- Salary permission policy: resolved identity is not enough for payroll
+  disclosure.
 
 ## What The Tests Protect
 
@@ -48,5 +50,9 @@ The tests verify:
   non-executable through `POST /scenario`.
 - the test employee id `EMP-IT-DEV-0001` resolves to IT Department /
   Software Developer without entering business `evidence_refs`.
+- the default IT developer id is denied for salary preview and does not produce
+  `HR-SALARY-PREVIEW-0001`.
+- the payroll-reader id `EMP-HR-PAY-0001` can exercise the allowed salary
+  path after permission and audit pass.
 - `POST /agent/query` routes natural-language salary and policy requests
   through the existing LangGraph and preserves trace/evidence boundaries.

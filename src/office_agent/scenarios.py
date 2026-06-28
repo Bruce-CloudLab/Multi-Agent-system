@@ -13,9 +13,9 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "scenario_id": "S02",
         "user_input": "员工想咨询下月的薪资",
         "operator": {
-            "employee_id": "EMP-1001",
-            "name": "张三",
-            "roles": ["employee"],
+            "employee_id": "EMP-HR-PAY-0001",
+            "name": "Test Payroll Reader",
+            "roles": ["employee", "hr_staff", "payroll_reader"],
         },
     },
     "S05": {
