@@ -21,7 +21,8 @@ private enterprise systems.
 - Trace and evidence separation for debuggable execution.
 - Concurrent isolation tests for state, trace, evidence, operator, and request
   boundaries.
-- Local HTTP demo runtime with a catalog-backed browser simulation console.
+- Local HTTP runtime with a browser Agent input and scenario simulation
+  console.
 
 ## Architecture
 
@@ -65,7 +66,7 @@ Run the full test suite:
 Current verified baseline:
 
 ```text
-64 passed
+70 passed
 ```
 
 ## Run The Demo Harness
@@ -104,9 +105,9 @@ Open:
 http://127.0.0.1:8765/
 ```
 
-The root page is a browser simulation console. It shows all S01-S15 designed
-scenarios, marks which ones are currently runnable, and lets runnable scenarios
-execute through the local mock runtime.
+The root page includes a browser Agent input backed by the existing LangGraph.
+It also shows all S01-S15 designed scenarios, marks which ones are currently
+runnable, and lets runnable scenarios execute through the local mock runtime.
 
 Implemented endpoints:
 
@@ -117,7 +118,14 @@ GET  /health
 GET  /scenarios
 GET  /demo
 GET  /demo/report
+POST /agent/query
 POST /scenario
+```
+
+`POST /agent/query` accepts:
+
+```json
+{"message": "查一下我的工资", "employee_id": "EMP-IT-DEV-0001"}
 ```
 
 `POST /scenario` accepts:

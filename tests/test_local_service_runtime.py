@@ -177,3 +177,58 @@ def test_scenario_endpoint_rejects_malformed_json():
 
     assert response.status == 400
     assert data["error"]["code"] == "invalid_json"
+
+
+def test_agent_query_endpoint_runs_salary_request_with_default_test_employee():
+    response = dispatch_request(
+        "POST",
+        "/agent/query",
+        '{"message":"查一下我的工资"}'.encode("utf-8"),
+    )
+    data = payload(response)
+    summary = data["summary"]
+
+    assert response.status == 200
+    assert data["entry"] == "agent_query"
+    assert data["employee_id"] == "EMP-IT-DEV-0001"
+    assert summary["request_type"] == "salary_query"
+    assert summary["risk_level"] == "high"
+    assert "resolve_identity_node" in summary["trace_nodes"]
+    assert "permission_audit_node" in summary["trace_nodes"]
+    assert "PERMISSION-CHECK-SALARY-0001" in summary["evidence_refs"]
+    assert "AUDIT-LOG-SALARY-0001" in summary["evidence_refs"]
+    assert "HR-SALARY-PREVIEW-0001" in summary["evidence_refs"]
+    assert "EMPLOYEE-PROFILE-IT-DEV-0001" not in summary["evidence_refs"]
+
+
+def test_agent_query_endpoint_runs_policy_request_from_natural_language():
+    response = dispatch_request(
+        "POST",
+        "/agent/query",
+        '{"message":"请查询差旅报销制度"}'.encode("utf-8"),
+    )
+    summary = payload(response)["summary"]
+
+    assert response.status == 200
+    assert summary["request_type"] == "policy_query"
+    assert "RAG-POLICY-RESULT-0001" in summary["evidence_refs"]
+    assert "RAG-EVAL-POLICY-0001" not in summary["evidence_refs"]
+    assert "rag_quality_gate=passed" in summary["gate_checks"]
+
+
+def test_agent_query_endpoint_rejects_empty_message():
+    response = dispatch_request("POST", "/agent/query", b'{"message":"  "}')
+    data = payload(response)
+
+    assert response.status == 400
+    assert data["error"]["code"] == "missing_message"
+
+
+def test_root_ui_contains_agent_query_entry():
+    response = dispatch_request("GET", "/")
+
+    assert response.status == 200
+    assert "Agent 对话入口" in response.body
+    assert "agentMessage" in response.body
+    assert "EMP-IT-DEV-0001" in response.body
+    assert "fetch('/agent/query'" in response.body

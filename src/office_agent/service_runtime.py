@@ -11,7 +11,8 @@ from urllib.parse import urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from office_agent.checkpointing import JsonCheckpointStore
-from office_agent.graph import run_scenario, start_project_inquiry_thread
+from office_agent.graph import build_graph, run_scenario, start_project_inquiry_thread
+from office_agent.mock_tools import TEST_EMPLOYEE_ID
 from office_agent.portfolio_demo import (
     display_response_for_case,
     display_response_zh_for_case,
@@ -84,6 +85,18 @@ def _portfolio_case_id_for_scenario(scenario_id: str, state: dict[str, Any]) -> 
     if scenario_id == "S15" and state.get("waiting_for") == "project_owner_reply":
         return "S15-start"
     return None
+
+
+def _display_scenario_id_for_request_type(request_type: str) -> str:
+    return {
+        "repair": "S01",
+        "salary_query": "S02",
+        "leave_cancellation": "S04",
+        "reception_schedule": "S05",
+        "policy_query": "S08",
+        "reception_plan_upload": "S14",
+        "project_inquiry": "S15",
+    }.get(request_type, "agent-query")
 
 
 def _display_response_for_scenario(scenario_id: str, state: dict[str, Any]) -> tuple[str, str, str]:
@@ -215,6 +228,61 @@ def _handle_scenario(body: bytes) -> ServiceResponse:
             "service": SERVICE_NAME,
             "scenario_id": scenario_id,
             "summary": _run_scenario_summary(scenario_id),
+        }
+    )
+
+
+def _run_agent_query_summary(message: str, employee_id: str) -> dict[str, Any]:
+    app = build_graph()
+    state = app.invoke(
+        {
+            "user_input": message,
+            "operator": {
+                "employee_id": employee_id,
+                "name": employee_id,
+            },
+        }
+    )
+    display_scenario_id = _display_scenario_id_for_request_type(
+        state.get("request_type", "unknown")
+    )
+    summary = summarize_runtime_state(display_scenario_id, state)
+    summary["scenario_id"] = "agent-query"
+    summary["display_scenario_id"] = display_scenario_id
+    summary["source"] = "agent_query"
+    summary["message"] = message
+    summary["employee_id"] = employee_id
+    return summary
+
+
+def _handle_agent_query(body: bytes) -> ServiceResponse:
+    try:
+        payload = _parse_json_body(body)
+    except ValueError as exc:
+        return _error_response(400, str(exc), "Request body must be a valid JSON object.")
+
+    message = payload.get("message")
+    if not isinstance(message, str) or not message.strip():
+        return _error_response(400, "missing_message", "message must be a non-empty string.")
+
+    employee_id = payload.get("employee_id", TEST_EMPLOYEE_ID)
+    if not isinstance(employee_id, str) or not employee_id.strip():
+        return _error_response(
+            400,
+            "invalid_employee_id",
+            "employee_id must be a non-empty string when provided.",
+        )
+
+    employee_id = employee_id.strip()
+    message = message.strip()
+    return _json_response(
+        {
+            "runtime": RUNTIME_NAME,
+            "service": SERVICE_NAME,
+            "entry": "agent_query",
+            "message": message,
+            "employee_id": employee_id,
+            "summary": _run_agent_query_summary(message, employee_id),
         }
     )
 
@@ -498,6 +566,72 @@ def render_demo_ui() -> str:
       line-height: 1.55;
     }}
 
+    .agent-panel {{
+      border: 1px solid #b7e4dc;
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 16px;
+      background: #f8fffe;
+    }}
+
+    .agent-form {{
+      display: grid;
+      gap: 10px;
+      margin-top: 10px;
+    }}
+
+    .agent-message {{
+      width: 100%;
+      min-height: 92px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--ink);
+      background: var(--panel);
+      font: inherit;
+      line-height: 1.45;
+    }}
+
+    .agent-controls {{
+      display: grid;
+      grid-template-columns: auto minmax(180px, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+    }}
+
+    .field-label {{
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }}
+
+    .agent-input {{
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      background: var(--panel);
+      font: inherit;
+    }}
+
+    .primary-button {{
+      min-height: 40px;
+      border: 1px solid var(--teal);
+      border-radius: 8px;
+      padding: 8px 14px;
+      color: #ffffff;
+      background: var(--teal);
+      cursor: pointer;
+      font-weight: 800;
+      white-space: nowrap;
+    }}
+
+    .primary-button:hover {{
+      background: #115e59;
+    }}
+
     .concept-grid {{
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -618,6 +752,10 @@ def render_demo_ui() -> str:
         flex-direction: column;
       }}
 
+      .agent-controls {{
+        grid-template-columns: 1fr;
+      }}
+
       .summary-grid,
       .concept-grid {{
         grid-template-columns: 1fr;
@@ -650,6 +788,18 @@ def render_demo_ui() -> str:
       </aside>
 
       <section class="detail" aria-live="polite">
+        <div class="agent-panel">
+          <h2>Agent 对话入口</h2>
+          <form id="agentForm" class="agent-form">
+            <textarea id="agentMessage" class="agent-message" name="message">查一下我的工资</textarea>
+            <div class="agent-controls">
+              <label class="field-label" for="employeeId">员工 ID</label>
+              <input id="employeeId" class="agent-input" name="employee_id" value="{TEST_EMPLOYEE_ID}">
+              <button id="askButton" class="primary-button" type="submit">发送</button>
+            </div>
+          </form>
+        </div>
+
         <h2 id="title">状态 State</h2>
         <p id="capability" class="subtitle"></p>
 
@@ -731,6 +881,10 @@ def render_demo_ui() -> str:
 
     const elements = {{
       status: document.getElementById('status'),
+      agentForm: document.getElementById('agentForm'),
+      agentMessage: document.getElementById('agentMessage'),
+      employeeId: document.getElementById('employeeId'),
+      askButton: document.getElementById('askButton'),
       caseList: document.getElementById('caseList'),
       scenarioList: document.getElementById('scenarioList'),
       refreshButton: document.getElementById('refreshButton'),
@@ -833,6 +987,39 @@ def render_demo_ui() -> str:
       }}
     }}
 
+    async function runAgentQuery(event) {{
+      event.preventDefault();
+      const message = elements.agentMessage.value.trim();
+      const employeeId = elements.employeeId.value.trim();
+      if (!message) {{
+        setStatus('请输入问题', true);
+        return;
+      }}
+      setStatus('正在运行 Agent');
+      try {{
+        const response = await fetch('/agent/query', {{
+          method: 'POST',
+          headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{
+            message,
+            employee_id: employeeId || undefined,
+          }}),
+        }});
+        const payload = await response.json();
+        if (!response.ok) {{
+          throw new Error(payload.error ? payload.error.message : `POST /agent/query failed with ${{response.status}}`);
+        }}
+        renderSummary({{
+          ...payload.summary,
+          title: 'Agent 对话入口',
+          capability: `输入：${{payload.message}}`,
+        }});
+        setStatus('Agent 已完成');
+      }} catch (error) {{
+        setStatus(error.message, true);
+      }}
+    }}
+
     async function loadScenarioCatalog() {{
       try {{
         const response = await fetch('/scenarios');
@@ -891,6 +1078,7 @@ def render_demo_ui() -> str:
       }}
     }}
 
+    elements.agentForm.addEventListener('submit', runAgentQuery);
     elements.refreshButton.addEventListener('click', loadDemo);
     renderScenarioCatalog();
     loadScenarioCatalog();
@@ -941,6 +1129,11 @@ def dispatch_request(method: str, path: str, body: bytes = b"") -> ServiceRespon
             if method != "POST":
                 return _error_response(405, "method_not_allowed", "Use POST for /scenario.")
             return _handle_scenario(body)
+
+        if route == "/agent/query":
+            if method != "POST":
+                return _error_response(405, "method_not_allowed", "Use POST for /agent/query.")
+            return _handle_agent_query(body)
     except Exception:
         return _error_response(
             500,

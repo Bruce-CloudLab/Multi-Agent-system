@@ -114,12 +114,22 @@ def orchestrator_node(state: OfficeAgentState) -> dict[str, Any]:
     user_input = state["user_input"]
     scenario_id = state.get("scenario_id")
 
-    if scenario_id == "S01" or "报修" in user_input or "灯坏" in user_input:
+    if (
+        scenario_id == "S01"
+        or "报修" in user_input
+        or "灯坏" in user_input
+        or "repair" in user_input.lower()
+    ):
         request_type = "repair"
         risk = {"level": "low", "reason": "普通行政报修，不涉及敏感数据披露"}
         identity_check = {"required": False}
         tools = [{"tool_call": "admin_api.create_repair_ticket"}]
-    elif scenario_id == "S02" or "薪资" in user_input or "工资" in user_input:
+    elif (
+        scenario_id == "S02"
+        or "薪资" in user_input
+        or "工资" in user_input
+        or "salary" in user_input.lower()
+    ):
         request_type = "salary_query"
         risk = {"level": "high", "reason": "薪资属于个人敏感信息，必须先做身份、权限和审计"}
         identity_check = {"required": True}
@@ -128,7 +138,11 @@ def orchestrator_node(state: OfficeAgentState) -> dict[str, Any]:
             {"tool_call": "audit_api.create_audit_log"},
             {"tool_call": "hr_api.get_salary_preview"},
         ]
-    elif scenario_id == "S14":
+    elif (
+        scenario_id == "S14"
+        or ("接待" in user_input and "上传" in user_input)
+        or "reception upload" in user_input.lower()
+    ):
         request_type = "reception_plan_upload"
         risk = {
             "level": "high",
@@ -147,7 +161,12 @@ def orchestrator_node(state: OfficeAgentState) -> dict[str, Any]:
             {"tool_call": "notification_api.send_message"},
             {"tool_call": "rag.decide_ingestion"},
         ]
-    elif scenario_id == "S15":
+    elif (
+        scenario_id == "S15"
+        or "项目问询" in user_input
+        or "项目询问" in user_input
+        or "project inquiry" in user_input.lower()
+    ):
         request_type = "project_inquiry"
         risk = {
             "level": "high",
@@ -166,7 +185,12 @@ def orchestrator_node(state: OfficeAgentState) -> dict[str, Any]:
             {"tool_call": "task_api.complete_task"},
             {"tool_call": "rag.decide_project_reply_ingestion"},
         ]
-    elif scenario_id == "S05" or "重要接待" in user_input or "接待" in user_input:
+    elif (
+        scenario_id == "S05"
+        or "重要接待" in user_input
+        or "接待" in user_input
+        or "reception" in user_input.lower()
+    ):
         request_type = "reception_schedule"
         risk = {"level": "high", "reason": "重要接待安排属于高风险内部信息，必须先做权限和审计"}
         identity_check = {"required": True}
@@ -175,12 +199,21 @@ def orchestrator_node(state: OfficeAgentState) -> dict[str, Any]:
             {"tool_call": "audit_api.create_audit_log"},
             {"tool_call": "admin_api.get_reception_schedule"},
         ]
-    elif scenario_id == "S08" or "差旅" in user_input or "制度" in user_input:
+    elif (
+        scenario_id == "S08"
+        or "差旅" in user_input
+        or "制度" in user_input
+        or "policy" in user_input.lower()
+    ):
         request_type = "policy_query"
         risk = {"level": "low", "reason": "制度查询，只能基于 RAG 证据回答"}
         identity_check = {"required": False}
         tools = [{"tool_call": "rag.search_policy_docs"}]
-    elif scenario_id == "S04" or "销假" in user_input:
+    elif (
+        scenario_id == "S04"
+        or "销假" in user_input
+        or "cancel leave" in user_input.lower()
+    ):
         request_type = "leave_cancellation"
         risk = {"level": "medium", "reason": "销假会影响考勤记录，需要确认员工身份和请假记录"}
         identity_check = {"required": True}

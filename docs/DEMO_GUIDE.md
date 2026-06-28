@@ -48,13 +48,18 @@ Open:
 http://127.0.0.1:8765/
 ```
 
-The root route serves a static browser console. The console reads:
+The root route serves a static browser console with an Agent input. The console
+reads:
 
 ```text
+POST /agent/query
 GET /scenarios
 GET /demo
 POST /scenario
 ```
+
+The Agent input sends a natural-language message and employee id into the
+existing LangGraph. The default local test id is `EMP-IT-DEV-0001`.
 
 The scenario catalog shows all S01-S15 design scenarios. Runnable scenarios can
 be executed from the page; not-connected scenarios are shown as disabled entries
@@ -87,6 +92,16 @@ Text report:
 
 ```powershell
 Invoke-RestMethod -Uri http://127.0.0.1:8765/demo/report
+```
+
+Ask the Agent entry:
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8765/agent/query `
+  -Method Post `
+  -ContentType 'application/json' `
+  -Body '{"message":"查一下我的工资","employee_id":"EMP-IT-DEV-0001"}'
 ```
 
 Scenario catalog:

@@ -11,7 +11,7 @@ Run:
 Current verified baseline:
 
 ```text
-66 passed
+70 passed
 ```
 
 ## Test Areas
@@ -29,6 +29,7 @@ Current verified baseline:
 - Demo harness and UI readability.
 - Scenario catalog and browser simulation console.
 - Test employee seed identity profile.
+- Agent query browser/runtime entry.
 
 ## What The Tests Protect
 
@@ -47,3 +48,5 @@ The tests verify:
   non-executable through `POST /scenario`.
 - the test employee id `EMP-IT-DEV-0001` resolves to IT Department /
   Software Developer without entering business `evidence_refs`.
+- `POST /agent/query` routes natural-language salary and policy requests
+  through the existing LangGraph and preserves trace/evidence boundaries.
