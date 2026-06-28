@@ -97,11 +97,13 @@ Invoke-RestMethod -Uri http://127.0.0.1:8765/demo/report
 Ask the Agent entry:
 
 ```powershell
+$json = '{"message":"查一下我的工资","employee_id":"EMP-IT-DEV-0001"}'
+$body = [System.Text.Encoding]::UTF8.GetBytes($json)
 Invoke-RestMethod `
   -Uri http://127.0.0.1:8765/agent/query `
   -Method Post `
-  -ContentType 'application/json' `
-  -Body '{"message":"查一下我的工资","employee_id":"EMP-IT-DEV-0001"}'
+  -ContentType 'application/json; charset=utf-8' `
+  -Body $body
 ```
 
 Scenario catalog:
