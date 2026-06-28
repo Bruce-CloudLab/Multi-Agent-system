@@ -11,7 +11,7 @@ Run:
 Current verified baseline:
 
 ```text
-64 passed
+66 passed
 ```
 
 ## Test Areas
@@ -28,6 +28,7 @@ Current verified baseline:
 - Local service runtime.
 - Demo harness and UI readability.
 - Scenario catalog and browser simulation console.
+- Test employee seed identity profile.
 
 ## What The Tests Protect
 
@@ -44,3 +45,5 @@ The tests verify:
 - local service endpoints keep the runtime adapter boundary.
 - the scenario catalog shows all S01-S15 entries while unsupported paths remain
   non-executable through `POST /scenario`.
+- the test employee id `EMP-IT-DEV-0001` resolves to IT Department /
+  Software Developer without entering business `evidence_refs`.

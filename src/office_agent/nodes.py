@@ -19,6 +19,7 @@ from office_agent.mock_tools import (
     decide_rag_ingestion,
     evaluate_rag_triad,
     extract_action_items,
+    get_employee_profile,
     get_project_access_scope,
     get_project_owner,
     get_reception_schedule,
@@ -223,18 +224,38 @@ def resolve_identity_node(state: OfficeAgentState) -> dict[str, Any]:
             ],
         }
 
+    profile_result = get_employee_profile(employee_id)
+    profile = profile_result["data"]
     return {
         "identity_check": {
             "required": True,
             "status": "resolved",
             "employee_id": employee_id,
+            "display_name": profile["display_name"],
+            "department": profile["department"],
+            "position": profile["position"],
+            "job_family": profile["job_family"],
+            "roles": profile["roles"],
+            "employment_status": profile["employment_status"],
+            "profile_evidence_ref": profile_result["evidence_ref"],
         },
         "blocked_reason": "",
+        "tool_results": {
+            "employee_profile_api.get_employee_profile": profile_result,
+        },
+        "domain_context": {
+            "employee_profile": profile,
+        },
         "trace_events": [
             _trace(
                 "resolve_identity_node",
                 "identity_resolved",
-                {"employee_id": employee_id},
+                {
+                    "employee_id": employee_id,
+                    "profile_evidence_ref": profile_result["evidence_ref"],
+                    "department": profile["department"],
+                    "position": profile["position"],
+                },
             )
         ],
     }
@@ -278,12 +299,17 @@ def permission_audit_node(state: OfficeAgentState) -> dict[str, Any]:
         risk_level=risk_level,
     )
 
-    return {
-        "identity_check": {
+    identity_check = dict(state.get("identity_check", {}))
+    identity_check.update(
+        {
             "required": True,
             "status": "resolved",
             "employee_id": employee_id,
-        },
+        }
+    )
+
+    return {
+        "identity_check": identity_check,
         "blocked_reason": "",
         "permission_context": permission_result["data"],
         "audit_context": audit_result["data"],

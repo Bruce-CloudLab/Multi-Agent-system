@@ -3,6 +3,47 @@ from __future__ import annotations
 from typing import Any
 
 
+TEST_EMPLOYEE_ID = "EMP-IT-DEV-0001"
+TEST_EMPLOYEE_PROFILE: dict[str, Any] = {
+    "employee_id": TEST_EMPLOYEE_ID,
+    "display_name": "Test IT Developer",
+    "department": "IT Department",
+    "position": "Software Developer",
+    "job_family": "Engineering",
+    "roles": ["employee", "it_staff", "developer"],
+    "employment_status": "active",
+}
+EMPLOYEE_PROFILES: dict[str, dict[str, Any]] = {
+    TEST_EMPLOYEE_ID: TEST_EMPLOYEE_PROFILE,
+}
+
+
+def get_employee_profile(employee_id: str) -> dict[str, Any]:
+    profile = EMPLOYEE_PROFILES.get(employee_id)
+    if profile is None:
+        profile = {
+            "employee_id": employee_id,
+            "display_name": employee_id,
+            "department": "unknown",
+            "position": "unknown",
+            "job_family": "unknown",
+            "roles": ["employee"],
+            "employment_status": "active",
+            "profile_status": "synthetic_operator",
+        }
+        evidence_ref = f"EMPLOYEE-PROFILE-{employee_id}"
+    else:
+        profile = dict(profile)
+        profile["profile_status"] = "seeded"
+        evidence_ref = "EMPLOYEE-PROFILE-IT-DEV-0001"
+
+    return {
+        "status": "success",
+        "data": profile,
+        "evidence_ref": evidence_ref,
+    }
+
+
 def _project_suffix(project_id: str) -> str:
     if project_id.startswith("PROJ-"):
         return project_id.removeprefix("PROJ-")

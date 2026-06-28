@@ -61,6 +61,20 @@ be executed from the page; not-connected scenarios are shown as disabled entries
 so the runtime does not pretend to execute paths that are not wired into the
 current graph.
 
+## Test Operator
+
+The local mock runtime includes one deterministic test employee profile:
+
+```text
+employee_id: EMP-IT-DEV-0001
+department: IT Department
+position: Software Developer
+roles: employee, it_staff, developer
+```
+
+This id is seed data for local graph tests. It is not a login account or an
+authentication token, and it does not bypass permission or audit gates.
+
 ## Endpoint Examples
 
 Health:
