@@ -1,0 +1,16 @@
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.agents/
+.codex/
+tmp/
+.git.broken-*/
+src/*.egg-info/
+AGENTS.md
+docs/*
+!docs/ARCHITECTURE.md
+!docs/DEMO_GUIDE.md
+!docs/TESTING.md
+!docs/TRACE_AND_EVIDENCE.md
