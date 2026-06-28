@@ -11,7 +11,7 @@ Run:
 Current verified baseline:
 
 ```text
-61 passed
+64 passed
 ```
 
 ## Test Areas
@@ -27,6 +27,7 @@ Current verified baseline:
 - RAG evaluation boundary.
 - Local service runtime.
 - Demo harness and UI readability.
+- Scenario catalog and browser simulation console.
 
 ## What The Tests Protect
 
@@ -41,3 +42,5 @@ The tests verify:
   operators, domain ids, evidence refs, or final responses.
 - S15 resume validation rejects mismatched or stale owner reply events.
 - local service endpoints keep the runtime adapter boundary.
+- the scenario catalog shows all S01-S15 entries while unsupported paths remain
+  non-executable through `POST /scenario`.

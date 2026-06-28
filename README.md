@@ -21,7 +21,7 @@ private enterprise systems.
 - Trace and evidence separation for debuggable execution.
 - Concurrent isolation tests for state, trace, evidence, operator, and request
   boundaries.
-- Local HTTP demo runtime and static browser console.
+- Local HTTP demo runtime with a catalog-backed browser simulation console.
 
 ## Architecture
 
@@ -65,7 +65,7 @@ Run the full test suite:
 Current verified baseline:
 
 ```text
-61 passed
+64 passed
 ```
 
 ## Run The Demo Harness
@@ -104,12 +104,17 @@ Open:
 http://127.0.0.1:8765/
 ```
 
+The root page is a browser simulation console. It shows all S01-S15 designed
+scenarios, marks which ones are currently runnable, and lets runnable scenarios
+execute through the local mock runtime.
+
 Implemented endpoints:
 
 ```text
 GET  /
 GET  /demo/ui
 GET  /health
+GET  /scenarios
 GET  /demo
 GET  /demo/report
 POST /scenario
@@ -120,6 +125,9 @@ POST /scenario
 ```json
 {"scenario_id": "S08"}
 ```
+
+Designed-but-not-connected scenario IDs are visible in `GET /scenarios`, but
+they still return `unsupported_scenario_id` if submitted to `POST /scenario`.
 
 ## Evidence Boundary
 

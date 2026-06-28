@@ -84,9 +84,9 @@ def test_portfolio_demo_report_uses_readable_display_responses(tmp_path):
     assert "Repair ticket ADMIN-REPAIR-0001 was created" in report
     assert "travel reimbursement policy" in report
     assert "owner reply was recorded for inquiry INQ-PROJ-CUST-A-0001" in report
-    assert "宸" not in report
-    assert "鏍" not in report
-    assert "绱" not in report
+    assert "浼佷笟" not in report
+    assert "閺" not in report
+    assert "缁" not in report
 
 
 def test_portfolio_demo_cli_prints_report(tmp_path, capsys):

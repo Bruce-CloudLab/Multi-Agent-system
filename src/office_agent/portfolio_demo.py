@@ -244,7 +244,7 @@ def display_response_zh_for_case(case_id: str, state: dict[str, Any]) -> str:
         rag = context.get("project_rag_ingestion", {})
         return (
             "负责人回复已写回问询 "
-            f"{inquiry.get('inquiry_id', 'unknown_inquiry')}；"
+            f"{inquiry.get('inquiry_id', 'unknown_inquiry')}，"
             f"负责人待办 {task.get('task_id', 'unknown_task')} 已完成；"
             "项目回复的 RAG 入库状态为 "
             f"{rag.get('rag_ingestion_status', 'unknown')}。"
@@ -300,7 +300,7 @@ def owner_reply_event_from_waiting_state(state: dict[str, Any]) -> dict[str, Any
     return {
         "inquiry_id": inquiry["inquiry_id"],
         "responder_id": owner["owner_id"],
-        "reply_summary": "portfolio-demo-owner-reply",
+        "reply_summary": "demo-owner-reply",
         "reply_sensitivity_level": "confidential",
     }
 
@@ -334,7 +334,7 @@ def run_portfolio_demo(checkpoint_dir: str | Path | None = None) -> list[dict[st
         checkpoint_root.mkdir(parents=True, exist_ok=True)
         return _run_portfolio_demo_with_checkpoint_root(checkpoint_root)
 
-    with TemporaryDirectory(prefix="office-agent-portfolio-demo-") as temp_dir:
+    with TemporaryDirectory(prefix="office-agent-demo-") as temp_dir:
         return _run_portfolio_demo_with_checkpoint_root(Path(temp_dir))
 
 

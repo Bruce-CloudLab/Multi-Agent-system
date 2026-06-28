@@ -51,9 +51,15 @@ http://127.0.0.1:8765/
 The root route serves a static browser console. The console reads:
 
 ```text
+GET /scenarios
 GET /demo
 POST /scenario
 ```
+
+The scenario catalog shows all S01-S15 design scenarios. Runnable scenarios can
+be executed from the page; not-connected scenarios are shown as disabled entries
+so the runtime does not pretend to execute paths that are not wired into the
+current graph.
 
 ## Endpoint Examples
 
@@ -67,6 +73,12 @@ Text report:
 
 ```powershell
 Invoke-RestMethod -Uri http://127.0.0.1:8765/demo/report
+```
+
+Scenario catalog:
+
+```powershell
+Invoke-RestMethod -Uri http://127.0.0.1:8765/scenarios
 ```
 
 Run one scenario:

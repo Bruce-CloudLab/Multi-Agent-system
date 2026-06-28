@@ -3,11 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 from urllib.parse import urlparse
+
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from office_agent.checkpointing import JsonCheckpointStore
 from office_agent.graph import run_scenario, start_project_inquiry_thread
@@ -17,6 +18,7 @@ from office_agent.portfolio_demo import (
     render_demo_report,
     run_portfolio_demo,
 )
+from office_agent.scenario_catalog import DESIGNED_SCENARIOS, scenario_catalog_payload
 from office_agent.scenarios import SCENARIOS
 
 
@@ -84,19 +86,61 @@ def _portfolio_case_id_for_scenario(scenario_id: str, state: dict[str, Any]) -> 
     return None
 
 
+def _display_response_for_scenario(scenario_id: str, state: dict[str, Any]) -> tuple[str, str, str]:
+    portfolio_case_id = _portfolio_case_id_for_scenario(scenario_id, state)
+    if portfolio_case_id:
+        return (
+            display_response_for_case(portfolio_case_id, state),
+            display_response_zh_for_case(portfolio_case_id, state),
+            "zh-CN",
+        )
+
+    context = state.get("domain_context", {})
+    evidence = ", ".join(_evidence_refs(state)) or "none"
+
+    if scenario_id == "S02":
+        salary = context.get("salary_query", {})
+        month = salary.get("target_month", "unknown_month")
+        gross_salary = salary.get("gross_salary", "unknown")
+        net_salary = salary.get("estimated_net_salary", "unknown")
+        currency = salary.get("currency", "CNY")
+        english = (
+            "Permission and audit passed before salary preview disclosure. "
+            f"For {month}, gross salary is {gross_salary} {currency}, estimated "
+            f"net salary is {net_salary} {currency}. Business evidence: {evidence}."
+        )
+        chinese = (
+            "系统先完成权限校验和审计，再披露薪资预览。"
+            f"{month} 的税前薪资为 {gross_salary} {currency}，"
+            f"预估税后薪资为 {net_salary} {currency}。业务证据：{evidence}。"
+        )
+        return english, chinese, "zh-CN"
+
+    if scenario_id == "S04":
+        leave = context.get("leave_record", {})
+        cancellation = context.get("leave_cancellation", {})
+        leave_id = leave.get("leave_id", "unknown_leave")
+        cancellation_id = cancellation.get("cancellation_id", "unknown_cancellation")
+        english = (
+            f"Leave cancellation {cancellation_id} was submitted for leave "
+            f"{leave_id}. Business evidence: {evidence}."
+        )
+        chinese = (
+            f"已为请假记录 {leave_id} 提交销假申请 {cancellation_id}。"
+            f"业务证据：{evidence}。"
+        )
+        return english, chinese, "zh-CN"
+
+    raw_response = state.get("final_response", "")
+    return raw_response, raw_response, "source"
+
+
 def summarize_runtime_state(scenario_id: str, state: dict[str, Any]) -> dict[str, Any]:
     checkpoint_context = state.get("checkpoint_context", {})
     raw_final_response = state.get("final_response", "")
-    portfolio_case_id = _portfolio_case_id_for_scenario(scenario_id, state)
-    display_response = (
-        display_response_for_case(portfolio_case_id, state)
-        if portfolio_case_id
-        else raw_final_response
-    )
-    display_response_zh = (
-        display_response_zh_for_case(portfolio_case_id, state)
-        if portfolio_case_id
-        else raw_final_response
+    display_response, display_response_zh, display_locale = _display_response_for_scenario(
+        scenario_id,
+        state,
     )
     return {
         "scenario_id": scenario_id,
@@ -110,7 +154,7 @@ def summarize_runtime_state(scenario_id: str, state: dict[str, Any]) -> dict[str
         "gate_checks": _gate_checks(state),
         "display_response": display_response,
         "display_response_zh": display_response_zh,
-        "display_locale": "zh-CN" if portfolio_case_id else "source",
+        "display_locale": display_locale,
         "raw_final_response": raw_final_response,
         "final_response": display_response,
     }
@@ -175,54 +219,64 @@ def _handle_scenario(body: bytes) -> ServiceResponse:
     )
 
 
+def _scenario_id_json() -> str:
+    ids = [item["scenario_id"] for item in DESIGNED_SCENARIOS]
+    return json.dumps(ids, ensure_ascii=False)
+
+
 def render_demo_ui() -> str:
-    return """<!doctype html>
+    scenario_ids = _scenario_id_json()
+    return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>企业办公 Agent 本地演示控制台</title>
+  <title>企业办公 Agent 本地运行台</title>
   <style>
-    :root {
+    :root {{
       color-scheme: light;
-      --bg: #f7f8fb;
+      --bg: #f6f7f9;
       --panel: #ffffff;
+      --panel-soft: #f9fafb;
       --ink: #17202a;
-      --muted: #5f6b7a;
-      --line: #d9dee7;
+      --muted: #647184;
+      --line: #d8dee8;
       --teal: #0f766e;
       --teal-soft: #e0f2f1;
-      --amber: #b7791f;
-      --green: #2f855a;
+      --blue: #1d4ed8;
+      --blue-soft: #eff6ff;
+      --amber: #a16207;
+      --amber-soft: #fffbeb;
+      --green: #237a4b;
+      --green-soft: #f0fdf4;
       --red: #b91c1c;
       --code: #111827;
-    }
+    }}
 
-    * {
+    * {{
       box-sizing: border-box;
-    }
+    }}
 
-    body {
+    body {{
       margin: 0;
       min-height: 100vh;
       background: var(--bg);
       color: var(--ink);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
-    }
+    }}
 
-    button,
-    select {
+    button {{
       font: inherit;
-    }
+    }}
 
-    .app-shell {
+    .app-shell {{
       min-height: 100vh;
       display: grid;
       grid-template-rows: auto 1fr;
-    }
+    }}
 
-    .topbar {
+    .topbar {{
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -230,16 +284,16 @@ def render_demo_ui() -> str:
       padding: 16px 20px;
       border-bottom: 1px solid var(--line);
       background: var(--panel);
-    }
+    }}
 
-    .brand {
+    .brand {{
       display: flex;
       align-items: center;
       gap: 12px;
       min-width: 0;
-    }
+    }}
 
-    .mark {
+    .mark {{
       width: 36px;
       height: 36px;
       border: 1px solid #7dd3c7;
@@ -249,279 +303,326 @@ def render_demo_ui() -> str:
       color: var(--teal);
       background: var(--teal-soft);
       font-weight: 800;
-    }
+    }}
 
-    h1 {
+    h1 {{
       margin: 0;
       font-size: 18px;
       line-height: 1.25;
-    }
+    }}
 
-    .subtitle {
+    h2 {{
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.35;
+    }}
+
+    .subtitle {{
       margin-top: 2px;
       color: var(--muted);
       font-size: 13px;
-    }
+    }}
 
-    .status-pill {
+    .status-pill {{
       padding: 6px 10px;
       border: 1px solid var(--line);
       border-radius: 999px;
-      background: #ffffff;
+      background: var(--panel);
       color: var(--muted);
       font-size: 12px;
       white-space: nowrap;
-    }
+    }}
 
-    .workspace {
+    .workspace {{
       display: grid;
-      grid-template-columns: minmax(220px, 280px) minmax(360px, 1fr) minmax(280px, 380px);
+      grid-template-columns: minmax(300px, 360px) minmax(360px, 1fr) minmax(300px, 390px);
       min-height: 0;
-    }
+    }}
 
     .rail,
     .detail,
-    .inspect {
+    .inspect {{
       min-width: 0;
       padding: 18px;
-    }
+    }}
 
-    .rail {
+    .rail {{
       border-right: 1px solid var(--line);
-      background: #fbfcfe;
-    }
+      background: var(--panel-soft);
+      overflow: auto;
+    }}
 
-    .detail {
+    .detail {{
       background: var(--panel);
       border-right: 1px solid var(--line);
-    }
+      overflow: auto;
+    }}
 
-    .inspect {
-      background: #fbfcfe;
-    }
+    .inspect {{
+      background: var(--panel-soft);
+      overflow: auto;
+    }}
 
-    .section-title {
+    .section-title {{
       margin: 0 0 10px;
       color: var(--muted);
       font-size: 12px;
       font-weight: 700;
       text-transform: uppercase;
-    }
+    }}
 
     .case-list,
-    .scenario-list {
+    .scenario-list {{
       display: grid;
       gap: 8px;
-    }
+    }}
 
     .case-button,
-    .scenario-button,
-    .refresh-button {
-      min-height: 40px;
+    .scenario-card,
+    .refresh-button {{
+      min-height: 42px;
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: #ffffff;
+      background: var(--panel);
       color: var(--ink);
       cursor: pointer;
       text-align: left;
-      padding: 8px 10px;
-    }
+      padding: 9px 10px;
+    }}
 
     .case-button:hover,
-    .scenario-button:hover,
+    .scenario-card:hover,
     .refresh-button:hover,
-    .case-button.active {
+    .case-button.active,
+    .scenario-card.active {{
       border-color: #5eead4;
       background: var(--teal-soft);
-    }
+    }}
 
-    .scenario-button {
-      text-align: center;
-    }
+    .scenario-card:disabled {{
+      cursor: default;
+      color: var(--muted);
+      background: #f1f3f6;
+    }}
 
-    .refresh-button {
+    .scenario-card:disabled:hover {{
+      border-color: var(--line);
+      background: #f1f3f6;
+    }}
+
+    .refresh-button {{
       margin-top: 14px;
       text-align: center;
       color: #ffffff;
       background: var(--teal);
       border-color: var(--teal);
       font-weight: 700;
-    }
+    }}
 
-    .case-kicker {
+    .case-kicker,
+    .scenario-meta {{
       color: var(--muted);
       font-size: 12px;
-    }
+    }}
 
-    .case-name {
-      margin-top: 2px;
+    .case-name,
+    .scenario-title {{
+      margin-top: 3px;
       font-size: 14px;
       font-weight: 700;
       overflow-wrap: anywhere;
-    }
+    }}
 
-    .summary-grid {
+    .scenario-row {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }}
+
+    .badge {{
+      flex: 0 0 auto;
+      padding: 3px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--panel);
+    }}
+
+    .badge.runnable {{
+      color: var(--green);
+      border-color: #86efac;
+      background: var(--green-soft);
+    }}
+
+    .badge.not_connected {{
+      color: var(--amber);
+      border-color: #facc15;
+      background: var(--amber-soft);
+    }}
+
+    .summary-grid {{
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
       margin: 16px 0;
-    }
+    }}
 
-    .metric {
+    .metric {{
       min-height: 72px;
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 10px;
-      background: #fbfcfe;
-    }
+      background: var(--panel-soft);
+    }}
 
-    .metric-label {
+    .metric-label {{
       color: var(--muted);
       font-size: 12px;
-    }
+    }}
 
-    .metric-value {
+    .metric-value {{
       margin-top: 6px;
       font-size: 16px;
       font-weight: 800;
       overflow-wrap: anywhere;
-    }
+    }}
 
-    .response {
+    .response {{
       border: 1px solid #b7e4dc;
       border-radius: 8px;
       padding: 14px;
       background: #f0fdfa;
-      line-height: 1.5;
-    }
+      line-height: 1.55;
+    }}
 
-    .concept-grid {
+    .concept-grid {{
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
       margin-top: 16px;
-    }
+    }}
 
-    .concept {
+    .concept {{
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 12px;
       min-height: 108px;
-      background: #ffffff;
-    }
+      background: var(--panel);
+    }}
 
-    .concept h3 {
+    .concept h3 {{
       margin: 0 0 8px;
       font-size: 13px;
-    }
+    }}
 
-    .concept p,
-    .concept code {
+    .concept p {{
       margin: 0;
       color: var(--muted);
       font-size: 13px;
       line-height: 1.45;
       overflow-wrap: anywhere;
-    }
+    }}
 
-    .node-path {
+    .node-path {{
       margin-top: 12px;
       padding: 12px;
       border-radius: 8px;
-      background: #111827;
+      background: var(--code);
       color: #e5e7eb;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 12px;
       line-height: 1.6;
       overflow-wrap: anywhere;
-    }
+    }}
 
-    .list {
+    .list {{
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       margin-bottom: 16px;
-    }
+    }}
 
-    .tag {
+    .tag {{
       max-width: 100%;
       padding: 6px 8px;
       border-radius: 999px;
       border: 1px solid var(--line);
-      background: #ffffff;
+      background: var(--panel);
       color: var(--code);
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 12px;
       overflow-wrap: anywhere;
-    }
+    }}
 
-    .tag.evidence {
+    .tag.evidence {{
       border-color: #9ae6b4;
-      background: #f0fff4;
+      background: var(--green-soft);
       color: var(--green);
-    }
+    }}
 
-    .tag.gate {
+    .tag.gate {{
       border-color: #fbd38d;
-      background: #fffaf0;
+      background: var(--amber-soft);
       color: var(--amber);
-    }
+    }}
 
-    .raw-json {
+    .raw-json {{
       width: 100%;
       min-height: 280px;
       margin: 0;
       padding: 12px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: #111827;
+      background: var(--code);
       color: #e5e7eb;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 12px;
       line-height: 1.5;
       overflow: auto;
       white-space: pre-wrap;
-    }
+    }}
 
-    .error-text {
+    .error-text {{
       color: var(--red);
       font-weight: 700;
-    }
+    }}
 
-    .spacer {
+    .spacer {{
       height: 18px;
-    }
+    }}
 
-    @media (max-width: 1020px) {
-      .workspace {
+    @media (max-width: 1120px) {{
+      .workspace {{
         grid-template-columns: 1fr;
-      }
+      }}
 
       .rail,
       .detail,
-      .inspect {
+      .inspect {{
         border-right: 0;
         border-bottom: 1px solid var(--line);
-      }
+      }}
 
       .summary-grid,
-      .concept-grid {
+      .concept-grid {{
         grid-template-columns: 1fr 1fr;
-      }
-    }
+      }}
+    }}
 
-    @media (max-width: 640px) {
-      .topbar {
+    @media (max-width: 640px) {{
+      .topbar {{
         align-items: flex-start;
         flex-direction: column;
-      }
+      }}
 
       .summary-grid,
-      .concept-grid {
+      .concept-grid {{
         grid-template-columns: 1fr;
-      }
-    }
+      }}
+    }}
   </style>
 </head>
 <body>
@@ -530,22 +631,22 @@ def render_demo_ui() -> str:
       <div class="brand">
         <div class="mark" aria-hidden="true">EA</div>
         <div>
-          <h1>企业办公 Agent 本地演示控制台</h1>
-          <div class="subtitle">LangGraph 演示：mock Tool/API/RAG 证据、权限审计、检查点和恢复。</div>
+          <h1>企业办公 Agent 本地运行台</h1>
+          <div class="subtitle">系统运行入口 · LangGraph + mock Tool/API/RAG evidence</div>
         </div>
       </div>
-      <div id="status" class="status-pill">正在加载 demo 数据</div>
+      <div id="status" class="status-pill">正在加载运行目录</div>
     </header>
 
     <main class="workspace">
       <aside class="rail">
+        <h2 class="section-title">系统运行入口</h2>
+        <div id="scenarioList" class="scenario-list"></div>
+
+        <div class="spacer"></div>
         <h2 class="section-title">精选演示 Curated Demo</h2>
         <div id="caseList" class="case-list"></div>
         <button id="refreshButton" class="refresh-button" type="button">刷新 Demo</button>
-
-        <div class="spacer"></div>
-        <h2 class="section-title">运行场景 Run Scenario</h2>
-        <div id="scenarioList" class="scenario-list"></div>
       </aside>
 
       <section class="detail" aria-live="polite">
@@ -589,7 +690,7 @@ def render_demo_ui() -> str:
           </div>
           <div class="concept">
             <h3>证据 Evidence</h3>
-            <p>只有 evidence_refs 是业务证据。Trace 和展示文案不是证据。</p>
+            <p>只有 evidence_refs 是业务证据；Trace、目录和展示文案不是证据。</p>
           </div>
         </div>
 
@@ -605,17 +706,30 @@ def render_demo_ui() -> str:
         <div id="gateList" class="list"></div>
 
         <h2 class="section-title">原始摘要 Raw Summary</h2>
-        <pre id="rawJson" class="raw-json">{}</pre>
+        <pre id="rawJson" class="raw-json">{{}}</pre>
       </aside>
     </main>
   </div>
 
   <script>
-    const scenarioIds = ['S01', 'S08', 'S05', 'S14', 'S15'];
+    const expectedScenarioIds = {scenario_ids};
+    const statusLabels = {{
+      runnable: '可运行',
+      not_connected: '未接入运行',
+    }};
     let cases = [];
+    let scenarioCatalog = expectedScenarioIds.map((id) => ({{
+      scenario_id: id,
+      title: id,
+      request_type: 'unknown',
+      risk_level: 'unknown',
+      status: 'not_connected',
+      run_hint: '正在加载运行目录',
+      description: '',
+    }}));
     let selectedCaseId = null;
 
-    const elements = {
+    const elements = {{
       status: document.getElementById('status'),
       caseList: document.getElementById('caseList'),
       scenarioList: document.getElementById('scenarioList'),
@@ -634,53 +748,44 @@ def render_demo_ui() -> str:
       evidenceList: document.getElementById('evidenceList'),
       gateList: document.getElementById('gateList'),
       rawJson: document.getElementById('rawJson'),
-    };
+    }};
 
-    function setStatus(message, isError = false) {
+    function setStatus(message, isError = false) {{
       elements.status.textContent = message;
       elements.status.classList.toggle('error-text', isError);
-    }
+    }}
 
-    function asText(value, fallback = 'none') {
-      if (value === null || value === undefined || value === '') {
+    function asText(value, fallback = 'none') {{
+      if (value === null || value === undefined || value === '') {{
         return fallback;
-      }
+      }}
       return String(value);
-    }
+    }}
 
-    function nodePath(summary) {
+    function nodePath(summary) {{
       const nodes = summary.trace_nodes || [];
       return nodes.length ? nodes.join(' -> ') : 'none';
-    }
+    }}
 
-    function stateFocus(summary) {
-      return summary.state_focus || [
-        `request_type=${asText(summary.request_type, 'unknown')}`,
-        `risk=${asText(summary.risk_level, 'unknown')}`,
-        `waiting_for=${asText(summary.waiting_for)}`,
-        `checkpoint_status=${asText(summary.checkpoint_status)}`,
-      ].join('; ');
-    }
-
-    function renderTags(container, values, className) {
+    function renderTags(container, values, className) {{
       container.innerHTML = '';
       const items = values && values.length ? values : ['none'];
-      for (const value of items) {
+      for (const value of items) {{
         const tag = document.createElement('span');
-        tag.className = `tag ${className}`;
+        tag.className = `tag ${{className}}`;
         tag.textContent = value;
         container.appendChild(tag);
-      }
-    }
+      }}
+    }}
 
-    function renderSummary(summary) {
+    function renderSummary(summary) {{
       selectedCaseId = summary.case_id || summary.scenario_id;
       elements.title.textContent = summary.title || summary.scenario_id || 'Scenario';
       elements.capability.textContent = summary.capability || 'Single scenario run from /scenario.';
-      elements.stateMetric.textContent = `${asText(summary.request_type, 'unknown')} / ${asText(summary.risk_level, 'unknown')}`;
+      elements.stateMetric.textContent = `${{asText(summary.request_type, 'unknown')}} / ${{asText(summary.risk_level, 'unknown')}}`;
       elements.checkpointMetric.textContent = asText(summary.checkpoint_status);
       elements.interruptMetric.textContent = asText(summary.waiting_for);
-      elements.traceMetric.textContent = `${summary.trace_event_count || 0} events`;
+      elements.traceMetric.textContent = `${{summary.trace_event_count || 0}} events`;
       elements.displayResponse.textContent = summary.display_response_zh || summary.display_response || summary.final_response || '没有可展示的回复。';
       elements.nodeFocus.textContent = summary.node_focus || nodePath(summary);
       elements.conditionalEdgeFocus.textContent = summary.conditional_edge_focus || '查看门禁检查和路由摘要。';
@@ -690,79 +795,105 @@ def render_demo_ui() -> str:
       renderTags(elements.gateList, summary.gate_checks || [], 'gate');
       elements.rawJson.textContent = JSON.stringify(summary, null, 2);
       renderCaseButtons();
-    }
+      renderScenarioCatalog();
+    }}
 
-    function renderCaseButtons() {
+    function renderCaseButtons() {{
       elements.caseList.innerHTML = '';
-      for (const item of cases) {
+      for (const item of cases) {{
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = `case-button ${item.case_id === selectedCaseId ? 'active' : ''}`;
-        button.innerHTML = `<div class="case-kicker">${item.case_id}</div><div class="case-name">${item.title}</div>`;
+        button.className = `case-button ${{item.case_id === selectedCaseId ? 'active' : ''}}`;
+        button.innerHTML = `<div class="case-kicker">${{item.case_id}}</div><div class="case-name">${{item.title}}</div>`;
         button.addEventListener('click', () => renderSummary(item));
         elements.caseList.appendChild(button);
-      }
-    }
+      }}
+    }}
 
-    function renderScenarioButtons() {
+    function renderScenarioCatalog() {{
       elements.scenarioList.innerHTML = '';
-      for (const id of scenarioIds) {
+      for (const item of scenarioCatalog) {{
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'scenario-button';
-        button.textContent = id;
-        button.addEventListener('click', () => runScenario(id));
+        button.className = `scenario-card ${{item.scenario_id === selectedCaseId ? 'active' : ''}}`;
+        button.disabled = item.status !== 'runnable';
+        button.innerHTML = `
+          <div class="scenario-row">
+            <span class="scenario-meta">${{item.scenario_id}} · ${{item.request_type}} · ${{item.risk_level}}</span>
+            <span class="badge ${{item.status}}">${{statusLabels[item.status] || item.status}}</span>
+          </div>
+          <div class="scenario-title">${{item.title}}</div>
+          <div class="scenario-meta">${{item.description}}</div>
+          <div class="scenario-meta">${{item.run_hint}}</div>
+        `;
+        if (item.status === 'runnable') {{
+          button.addEventListener('click', () => runScenario(item.scenario_id, item));
+        }}
         elements.scenarioList.appendChild(button);
-      }
-    }
+      }}
+    }}
 
-    async function loadDemo() {
+    async function loadScenarioCatalog() {{
+      try {{
+        const response = await fetch('/scenarios');
+        if (!response.ok) {{
+          throw new Error(`GET /scenarios failed with ${{response.status}}`);
+        }}
+        const payload = await response.json();
+        scenarioCatalog = payload.scenarios || [];
+        renderScenarioCatalog();
+        setStatus(`已加载 ${{payload.total_count}} 个场景，${{payload.runnable_count}} 个可运行`);
+      }} catch (error) {{
+        setStatus(error.message, true);
+      }}
+    }}
+
+    async function loadDemo() {{
       setStatus('正在加载 /demo');
-      try {
+      try {{
         const response = await fetch('/demo');
-        if (!response.ok) {
-          throw new Error(`GET /demo failed with ${response.status}`);
-        }
+        if (!response.ok) {{
+          throw new Error(`GET /demo failed with ${{response.status}}`);
+        }}
         const payload = await response.json();
         cases = payload.cases || [];
         renderCaseButtons();
-        if (cases.length) {
+        if (cases.length) {{
           renderSummary(cases[0]);
-          setStatus(`已加载 ${cases.length} 个精选案例`);
-        } else {
-          setStatus('未返回精选案例', true);
-        }
-      } catch (error) {
+        }}
+      }} catch (error) {{
         setStatus(error.message, true);
         elements.displayResponse.textContent = '无法加载 /demo。';
-      }
-    }
+      }}
+    }}
 
-    async function runScenario(scenarioId) {
-      setStatus(`正在运行 ${scenarioId}`);
-      try {
-        const response = await fetch('/scenario', {
+    async function runScenario(scenarioId, catalogItem) {{
+      setStatus(`正在运行 ${{scenarioId}}`);
+      try {{
+        const response = await fetch('/scenario', {{
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({scenario_id: scenarioId}),
-        });
+          headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{scenario_id: scenarioId}}),
+        }});
         const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.error ? payload.error.message : `POST /scenario failed with ${response.status}`);
-        }
-        renderSummary({
+        if (!response.ok) {{
+          throw new Error(payload.error ? payload.error.message : `POST /scenario failed with ${{response.status}}`);
+        }}
+        renderSummary({{
           ...payload.summary,
           scenario_id: scenarioId,
-          title: `场景 Scenario ${scenarioId}`,
-        });
-        setStatus(`场景 ${scenarioId} 已完成`);
-      } catch (error) {
+          title: `${{scenarioId}} ${{catalogItem.title}}`,
+          capability: catalogItem.description,
+        }});
+        setStatus(`场景 ${{scenarioId}} 已完成`);
+      }} catch (error) {{
         setStatus(error.message, true);
-      }
-    }
+      }}
+    }}
 
     elements.refreshButton.addEventListener('click', loadDemo);
-    renderScenarioButtons();
+    renderScenarioCatalog();
+    loadScenarioCatalog();
     loadDemo();
   </script>
 </body>
@@ -790,6 +921,11 @@ def dispatch_request(method: str, path: str, body: bytes = b"") -> ServiceRespon
                     "runtime": RUNTIME_NAME,
                 }
             )
+
+        if route == "/scenarios":
+            if method != "GET":
+                return _error_response(405, "method_not_allowed", "Use GET for /scenarios.")
+            return _json_response(scenario_catalog_payload(RUNTIME_NAME, SERVICE_NAME))
 
         if route == "/demo":
             if method != "GET":

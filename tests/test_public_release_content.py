@@ -41,6 +41,7 @@ def test_user_visible_demo_surfaces_use_neutral_demo_language(tmp_path):
     combined = f"{report}\n{ui}".lower()
 
     assert "enterprise office agent demo harness" in combined
-    assert "企业办公 agent 本地演示控制台".lower() in combined
+    assert "企业办公 agent 本地运行台" in combined
+    assert "系统运行入口" in combined
     for forbidden in FORBIDDEN_PUBLIC_POSITIONING:
         assert forbidden.lower() not in combined
