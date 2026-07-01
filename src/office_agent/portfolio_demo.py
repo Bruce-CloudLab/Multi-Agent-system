@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 
 from office_agent.checkpointing import JsonCheckpointStore
@@ -15,6 +14,12 @@ from office_agent.graph import (
 
 PORTFOLIO_CASES = ("S01", "S08", "S05", "S14")
 S15_DEMO_THREAD_ID = "THREAD-PORTFOLIO-DEMO-S15"
+
+
+def demo_temp_root() -> Path:
+    root = Path(__file__).resolve().parents[2] / "tmp" / "office-agent-demo"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 CASE_CONCEPTS: dict[str, dict[str, str]] = {
@@ -334,8 +339,9 @@ def run_portfolio_demo(checkpoint_dir: str | Path | None = None) -> list[dict[st
         checkpoint_root.mkdir(parents=True, exist_ok=True)
         return _run_portfolio_demo_with_checkpoint_root(checkpoint_root)
 
-    with TemporaryDirectory(prefix="office-agent-demo-") as temp_dir:
-        return _run_portfolio_demo_with_checkpoint_root(Path(temp_dir))
+    checkpoint_root = demo_temp_root() / "portfolio"
+    checkpoint_root.mkdir(parents=True, exist_ok=True)
+    return _run_portfolio_demo_with_checkpoint_root(checkpoint_root)
 
 
 def _format_list(values: list[str]) -> str:

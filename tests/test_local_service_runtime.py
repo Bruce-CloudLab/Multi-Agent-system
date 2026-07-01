@@ -7,7 +7,22 @@ def payload(response):
     return json.loads(response.body)
 
 
-def test_health_returns_ok():
+def login_headers(username="it.demo", password="demo123"):
+    response = dispatch_request(
+        "POST",
+        "/auth/login",
+        json.dumps({"username": username, "password": password}).encode("utf-8"),
+    )
+    assert response.status == 200
+    cookie = response.headers["Set-Cookie"].split(";", 1)[0]
+    return {"Cookie": cookie}
+
+
+def authed(method, path, body=b"", username="it.demo"):
+    return dispatch_request(method, path, body, headers=login_headers(username))
+
+
+def test_health_returns_ok_without_login():
     response = dispatch_request("GET", "/health")
 
     assert response.status == 200
@@ -16,8 +31,67 @@ def test_health_returns_ok():
     assert payload(response)["runtime"] == "local-service-v1"
 
 
-def test_scenarios_endpoint_returns_full_catalog():
-    response = dispatch_request("GET", "/scenarios")
+def test_login_page_returns_minimal_oil_painting_entry():
+    response = dispatch_request("GET", "/login")
+
+    assert response.status == 200
+    assert response.content_type == "text/html; charset=utf-8"
+    assert "企业办公 Agent" in response.body
+    assert "agent-oil-hero.png" in response.body
+    assert "it.demo" in response.body
+    assert "hr.payroll" in response.body
+    assert "fetch('/auth/login'" in response.body
+
+
+def test_root_redirects_to_login_without_session():
+    response = dispatch_request("GET", "/")
+
+    assert response.status == 302
+    assert response.headers["Location"] == "/login"
+
+
+def test_login_success_sets_cookie_and_auth_me_returns_profile():
+    headers = login_headers("hr.payroll")
+    response = dispatch_request("GET", "/auth/me", headers=headers)
+    data = payload(response)
+
+    assert response.status == 200
+    assert data["authenticated"] is True
+    assert data["user"]["username"] == "hr.payroll"
+    assert data["user"]["employee_id"] == "EMP-HR-PAY-0001"
+
+
+def test_login_rejects_invalid_credentials():
+    response = dispatch_request(
+        "POST",
+        "/auth/login",
+        b'{"username":"it.demo","password":"wrong"}',
+    )
+    data = payload(response)
+
+    assert response.status == 401
+    assert data["error"]["code"] == "invalid_credentials"
+
+
+def test_logout_clears_session_cookie():
+    headers = login_headers()
+    response = dispatch_request("POST", "/auth/logout", headers=headers)
+
+    assert response.status == 200
+    assert "Max-Age=0" in response.headers["Set-Cookie"]
+
+
+def test_static_oil_asset_is_served_without_login():
+    response = dispatch_request("GET", "/static/agent-oil-hero.png")
+
+    assert response.status == 200
+    assert response.content_type == "image/png"
+    assert isinstance(response.body, bytes)
+    assert len(response.body) > 100000
+
+
+def test_scenarios_endpoint_returns_full_catalog_after_login():
+    response = authed("GET", "/scenarios")
     data = payload(response)
 
     assert response.status == 200
@@ -40,22 +114,23 @@ def test_scenarios_endpoint_returns_full_catalog():
     assert s03["run_hint"] == "已设计，当前本地运行台未接入执行"
 
 
-def test_root_returns_system_simulation_console_with_all_scenarios():
-    response = dispatch_request("GET", "/")
+def test_root_returns_authenticated_minimal_workspace():
+    response = dispatch_request("GET", "/", headers=login_headers("hr.payroll"))
 
     assert response.status == 200
     assert response.content_type == "text/html; charset=utf-8"
     assert '<html lang="zh-CN">' in response.body
-    assert "企业办公 Agent 本地运行台" in response.body
-    assert "系统运行入口" in response.body
-    assert "loadScenarioCatalog" in response.body
+    assert "企业办公 Agent 工作台" in response.body
+    assert "Agent 对话入口" in response.body
+    assert "agent-oil-hero.png" in response.body
+    assert "logoutButton" in response.body
+    assert "EMP-HR-PAY-0001" in response.body
     assert "fetch('/scenarios')" in response.body
     assert "fetch('/demo')" in response.body
     assert "fetch('/scenario'" in response.body
+    assert "fetch('/agent/query'" in response.body
     assert "display_response_zh || summary.display_response" in response.body
     assert "未接入运行" in response.body
-    for scenario_id in [f"S{i:02d}" for i in range(1, 16)]:
-        assert scenario_id in response.body
     for label in [
         "状态 State",
         "节点路径 Node Path",
@@ -69,17 +144,18 @@ def test_root_returns_system_simulation_console_with_all_scenarios():
         assert label in response.body
 
 
-def test_demo_ui_route_returns_same_console():
-    root = dispatch_request("GET", "/")
-    response = dispatch_request("GET", "/demo/ui")
+def test_demo_ui_route_returns_same_authenticated_workspace():
+    headers = login_headers()
+    root = dispatch_request("GET", "/", headers=headers)
+    response = dispatch_request("GET", "/demo/ui", headers=headers)
 
     assert response.status == 200
     assert response.content_type == "text/html; charset=utf-8"
     assert response.body == root.body
 
 
-def test_demo_endpoint_returns_curated_cases():
-    response = dispatch_request("GET", "/demo")
+def test_demo_endpoint_returns_curated_cases_after_login():
+    response = authed("GET", "/demo")
     data = payload(response)
 
     assert response.status == 200
@@ -100,8 +176,8 @@ def test_demo_endpoint_returns_curated_cases():
     assert "已创建报修工单 ADMIN-REPAIR-0001" in data["cases"][0]["display_response_zh"]
 
 
-def test_demo_report_endpoint_returns_teaching_text():
-    response = dispatch_request("GET", "/demo/report")
+def test_demo_report_endpoint_returns_teaching_text_after_login():
+    response = authed("GET", "/demo/report")
 
     assert response.status == 200
     assert response.content_type == "text/plain; charset=utf-8"
@@ -115,7 +191,7 @@ def test_demo_report_endpoint_returns_teaching_text():
 
 
 def test_scenario_endpoint_runs_s08_and_preserves_rag_evidence_boundary():
-    response = dispatch_request("POST", "/scenario", b'{"scenario_id": "S08"}')
+    response = authed("POST", "/scenario", b'{"scenario_id": "S08"}')
     data = payload(response)
     summary = data["summary"]
 
@@ -134,8 +210,9 @@ def test_scenario_endpoint_runs_s08_and_preserves_rag_evidence_boundary():
 
 
 def test_scenario_endpoint_runs_s02_and_s04_as_supported_paths():
-    s02 = payload(dispatch_request("POST", "/scenario", b'{"scenario_id": "S02"}'))["summary"]
-    s04 = payload(dispatch_request("POST", "/scenario", b'{"scenario_id": "S04"}'))["summary"]
+    headers = login_headers()
+    s02 = payload(dispatch_request("POST", "/scenario", b'{"scenario_id": "S02"}', headers=headers))["summary"]
+    s04 = payload(dispatch_request("POST", "/scenario", b'{"scenario_id": "S04"}', headers=headers))["summary"]
 
     assert s02["request_type"] == "salary_query"
     assert s02["risk_level"] == "high"
@@ -145,7 +222,7 @@ def test_scenario_endpoint_runs_s02_and_s04_as_supported_paths():
 
 
 def test_scenario_endpoint_returns_s15_waiting_summary_without_resume():
-    response = dispatch_request("POST", "/scenario", b'{"scenario_id": "S15"}')
+    response = authed("POST", "/scenario", b'{"scenario_id": "S15"}')
     summary = payload(response)["summary"]
 
     assert response.status == 200
@@ -156,7 +233,7 @@ def test_scenario_endpoint_returns_s15_waiting_summary_without_resume():
 
 
 def test_scenario_endpoint_rejects_designed_but_not_connected_scenario():
-    response = dispatch_request("POST", "/scenario", b'{"scenario_id": "S03"}')
+    response = authed("POST", "/scenario", b'{"scenario_id": "S03"}')
     data = payload(response)
 
     assert response.status == 400
@@ -164,7 +241,7 @@ def test_scenario_endpoint_rejects_designed_but_not_connected_scenario():
 
 
 def test_scenario_endpoint_rejects_unknown_scenario():
-    response = dispatch_request("POST", "/scenario", b'{"scenario_id": "S99"}')
+    response = authed("POST", "/scenario", b'{"scenario_id": "S99"}')
     data = payload(response)
 
     assert response.status == 400
@@ -172,18 +249,19 @@ def test_scenario_endpoint_rejects_unknown_scenario():
 
 
 def test_scenario_endpoint_rejects_malformed_json():
-    response = dispatch_request("POST", "/scenario", b"{")
+    response = authed("POST", "/scenario", b"{")
     data = payload(response)
 
     assert response.status == 400
     assert data["error"]["code"] == "invalid_json"
 
 
-def test_agent_query_endpoint_denies_salary_request_with_default_test_employee():
+def test_agent_query_endpoint_denies_salary_request_with_it_demo_login():
     response = dispatch_request(
         "POST",
         "/agent/query",
-        '{"message":"查一下我的工资"}'.encode("utf-8"),
+        '{"message":"查一下我的工资","employee_id":"EMP-HR-PAY-0001"}'.encode("utf-8"),
+        headers=login_headers("it.demo"),
     )
     data = payload(response)
     summary = data["summary"]
@@ -191,6 +269,8 @@ def test_agent_query_endpoint_denies_salary_request_with_default_test_employee()
     assert response.status == 200
     assert data["entry"] == "agent_query"
     assert data["employee_id"] == "EMP-IT-DEV-0001"
+    assert data["user"]["username"] == "it.demo"
+    assert summary["employee_id"] == "EMP-IT-DEV-0001"
     assert summary["request_type"] == "salary_query"
     assert summary["risk_level"] == "high"
     assert "resolve_identity_node" in summary["trace_nodes"]
@@ -207,11 +287,12 @@ def test_agent_query_endpoint_denies_salary_request_with_default_test_employee()
     assert "14250" not in summary["display_response"]
 
 
-def test_agent_query_endpoint_allows_salary_request_with_payroll_reader():
+def test_agent_query_endpoint_allows_salary_request_with_payroll_reader_login():
     response = dispatch_request(
         "POST",
         "/agent/query",
-        b'{"message":"salary query request","employee_id":"EMP-HR-PAY-0001"}',
+        b'{"message":"salary query request"}',
+        headers=login_headers("hr.payroll"),
     )
     data = payload(response)
     summary = data["summary"]
@@ -219,6 +300,8 @@ def test_agent_query_endpoint_allows_salary_request_with_payroll_reader():
     assert response.status == 200
     assert data["entry"] == "agent_query"
     assert data["employee_id"] == "EMP-HR-PAY-0001"
+    assert data["user"]["username"] == "hr.payroll"
+    assert summary["employee_id"] == "EMP-HR-PAY-0001"
     assert summary["request_type"] == "salary_query"
     assert summary["risk_level"] == "high"
     assert "permission_audit_node" in summary["trace_nodes"]
@@ -236,6 +319,7 @@ def test_agent_query_endpoint_runs_policy_request_from_natural_language():
         "POST",
         "/agent/query",
         '{"message":"请查询差旅报销制度"}'.encode("utf-8"),
+        headers=login_headers(),
     )
     summary = payload(response)["summary"]
 
@@ -246,19 +330,22 @@ def test_agent_query_endpoint_runs_policy_request_from_natural_language():
     assert "rag_quality_gate=passed" in summary["gate_checks"]
 
 
-def test_agent_query_endpoint_rejects_empty_message():
-    response = dispatch_request("POST", "/agent/query", b'{"message":"  "}')
+def test_agent_query_endpoint_rejects_empty_message_after_login():
+    response = dispatch_request(
+        "POST",
+        "/agent/query",
+        b'{"message":"  "}',
+        headers=login_headers(),
+    )
     data = payload(response)
 
     assert response.status == 400
     assert data["error"]["code"] == "missing_message"
 
 
-def test_root_ui_contains_agent_query_entry():
-    response = dispatch_request("GET", "/")
+def test_agent_query_endpoint_requires_login():
+    response = dispatch_request("POST", "/agent/query", b'{"message":"test"}')
+    data = payload(response)
 
-    assert response.status == 200
-    assert "Agent 对话入口" in response.body
-    assert "agentMessage" in response.body
-    assert "EMP-IT-DEV-0001" in response.body
-    assert "fetch('/agent/query'" in response.body
+    assert response.status == 401
+    assert data["error"]["code"] == "auth_required"

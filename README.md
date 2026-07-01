@@ -21,8 +21,8 @@ private enterprise systems.
 - Trace and evidence separation for debuggable execution.
 - Concurrent isolation tests for state, trace, evidence, operator, and request
   boundaries.
-- Local HTTP runtime with a browser Agent input and scenario simulation
-  console.
+- Authenticated local HTTP runtime with a browser Agent input, login page,
+  scenario simulation console, trace, and evidence panels.
 
 ## Architecture
 
@@ -63,10 +63,10 @@ Run the full test suite:
 & '.\.venv\Scripts\python.exe' -m pytest tests -q
 ```
 
-Current verified baseline:
+Current focused verification:
 
 ```text
-73 passed
+tests/test_local_service_runtime.py -> 23 passed
 ```
 
 ## Run The Demo Harness
@@ -102,41 +102,49 @@ Start the local HTTP runtime:
 Open:
 
 ```text
-http://127.0.0.1:8765/
+http://127.0.0.1:8765/login
 ```
 
-The root page includes a browser Agent input backed by the existing LangGraph.
-It also shows all S01-S15 designed scenarios, marks which ones are currently
-runnable, and lets runnable scenarios execute through the local mock runtime.
+Demo accounts:
 
-The default Agent input employee id is `EMP-IT-DEV-0001`. It resolves as an IT
-developer but does not have salary-preview permission, so salary requests route
-to manual review without loading payroll data. Use `EMP-HR-PAY-0001` when you
-want to exercise the authorized payroll-reader salary path.
+```text
+it.demo / demo123
+hr.payroll / demo123
+```
+
+After login, the dashboard includes a browser Agent input backed by the existing
+LangGraph. It also shows all S01-S15 designed scenarios, marks which ones are
+currently runnable, and lets runnable scenarios execute through the local mock
+runtime.
+
+The logged-in account controls the demo operator identity. `it.demo` resolves to
+`EMP-IT-DEV-0001` and is denied for salary preview. `hr.payroll` resolves to
+`EMP-HR-PAY-0001` and can exercise the authorized payroll-reader salary path.
+`POST /agent/query` ignores client-supplied `employee_id` values and uses the
+session profile instead.
 
 Implemented endpoints:
 
 ```text
 GET  /
+GET  /login
 GET  /demo/ui
 GET  /health
 GET  /scenarios
 GET  /demo
 GET  /demo/report
+GET  /auth/me
+GET  /static/<asset>
+POST /auth/login
+POST /auth/logout
 POST /agent/query
 POST /scenario
 ```
 
-`POST /agent/query` accepts:
+`POST /agent/query` accepts an authenticated request:
 
 ```json
-{"message": "salary query request", "employee_id": "EMP-IT-DEV-0001"}
-```
-
-Authorized salary smoke example:
-
-```json
-{"message": "salary query request", "employee_id": "EMP-HR-PAY-0001"}
+{"message": "salary query request"}
 ```
 
 `POST /scenario` accepts:
@@ -164,7 +172,8 @@ review, reject, or escalate instead of inventing enterprise facts.
 
 - Tool/API/RAG integrations are deterministic local mocks.
 - The local HTTP runtime is a demo adapter, not a production deployment layer.
-- Authentication, real enterprise directories, real document stores, and
-  production observability backends are outside the current local runtime.
+- Authentication is a local demo adapter only; real enterprise directories, real
+  document stores, durable sessions, and production observability backends are
+  outside the current local runtime.
 - The static browser console is intentionally dependency-light and does not use
   a frontend build system.

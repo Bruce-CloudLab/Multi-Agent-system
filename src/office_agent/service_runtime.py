@@ -2,18 +2,27 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 from urllib.parse import urlparse
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from office_agent.auth import (
+    authenticate,
+    clear_session,
+    create_session,
+    current_user,
+    expired_session_cookie,
+    session_cookie,
+    session_token_from_headers,
+)
 from office_agent.checkpointing import JsonCheckpointStore
 from office_agent.graph import build_graph, run_scenario, start_project_inquiry_thread
 from office_agent.mock_tools import TEST_EMPLOYEE_ID
 from office_agent.portfolio_demo import (
+    demo_temp_root,
     display_response_for_case,
     display_response_zh_for_case,
     render_demo_report,
@@ -21,6 +30,7 @@ from office_agent.portfolio_demo import (
 )
 from office_agent.scenario_catalog import DESIGNED_SCENARIOS, scenario_catalog_payload
 from office_agent.scenarios import SCENARIOS
+from office_agent.ui_templates import render_dashboard_ui, render_login_ui
 
 
 RUNTIME_NAME = "local-service-v1"
@@ -32,7 +42,8 @@ S15_SCENARIO_THREAD_ID = "THREAD-SERVICE-RUNTIME-S15"
 class ServiceResponse:
     status: int
     content_type: str
-    body: str
+    body: str | bytes
+    headers: dict[str, str] = field(default_factory=dict)
 
 
 def _json_response(payload: dict[str, Any], status: int = 200) -> ServiceResponse:
@@ -49,6 +60,37 @@ def _text_response(body: str, status: int = 200) -> ServiceResponse:
 
 def _html_response(body: str, status: int = 200) -> ServiceResponse:
     return ServiceResponse(status=status, content_type="text/html; charset=utf-8", body=body)
+
+
+def _redirect_response(location: str) -> ServiceResponse:
+    return ServiceResponse(
+        status=302,
+        content_type="text/plain; charset=utf-8",
+        body="Redirecting.\n",
+        headers={"Location": location},
+    )
+
+
+def _binary_response(body: bytes, content_type: str, status: int = 200) -> ServiceResponse:
+    return ServiceResponse(status=status, content_type=content_type, body=body)
+
+
+def _static_response(route: str) -> ServiceResponse:
+    file_name = Path(route).name
+    static_root = Path(__file__).resolve().parent / "static"
+    path = static_root / file_name
+    if not path.exists() or not path.is_file():
+        return _error_response(404, "static_not_found", f"Unknown static asset: {file_name}")
+    content_types = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".css": "text/css; charset=utf-8",
+        ".js": "application/javascript; charset=utf-8",
+    }
+    content_type = content_types.get(path.suffix.lower(), "application/octet-stream")
+    return _binary_response(path.read_bytes(), content_type)
 
 
 def _error_response(status: int, code: str, message: str) -> ServiceResponse:
@@ -192,14 +234,13 @@ def summarize_runtime_state(scenario_id: str, state: dict[str, Any]) -> dict[str
 
 
 def _run_s15_start_summary() -> dict[str, Any]:
-    with TemporaryDirectory(prefix="office-agent-service-s15-") as temp_dir:
-        checkpoint_store = JsonCheckpointStore(Path(temp_dir) / "s15")
-        waiting = start_project_inquiry_thread(
-            "S15",
-            checkpoint_store=checkpoint_store,
-            thread_id=S15_SCENARIO_THREAD_ID,
-        )
-        return summarize_runtime_state("S15", waiting)
+    checkpoint_store = JsonCheckpointStore(demo_temp_root() / "service-s15")
+    waiting = start_project_inquiry_thread(
+        "S15",
+        checkpoint_store=checkpoint_store,
+        thread_id=S15_SCENARIO_THREAD_ID,
+    )
+    return summarize_runtime_state("S15", waiting)
 
 
 def _run_scenario_summary(scenario_id: str) -> dict[str, Any]:
@@ -273,7 +314,7 @@ def _run_agent_query_summary(message: str, employee_id: str) -> dict[str, Any]:
     return summary
 
 
-def _handle_agent_query(body: bytes) -> ServiceResponse:
+def _handle_agent_query(body: bytes, user_profile: dict[str, str]) -> ServiceResponse:
     try:
         payload = _parse_json_body(body)
     except ValueError as exc:
@@ -283,15 +324,7 @@ def _handle_agent_query(body: bytes) -> ServiceResponse:
     if not isinstance(message, str) or not message.strip():
         return _error_response(400, "missing_message", "message must be a non-empty string.")
 
-    employee_id = payload.get("employee_id", TEST_EMPLOYEE_ID)
-    if not isinstance(employee_id, str) or not employee_id.strip():
-        return _error_response(
-            400,
-            "invalid_employee_id",
-            "employee_id must be a non-empty string when provided.",
-        )
-
-    employee_id = employee_id.strip()
+    employee_id = user_profile["employee_id"]
     message = message.strip()
     return _json_response(
         {
@@ -300,10 +333,10 @@ def _handle_agent_query(body: bytes) -> ServiceResponse:
             "entry": "agent_query",
             "message": message,
             "employee_id": employee_id,
+            "user": user_profile,
             "summary": _run_agent_query_summary(message, employee_id),
         }
     )
-
 
 def _scenario_id_json() -> str:
     ids = [item["scenario_id"] for item in DESIGNED_SCENARIOS]
@@ -1107,15 +1140,91 @@ def render_demo_ui() -> str:
 """
 
 
-def dispatch_request(method: str, path: str, body: bytes = b"") -> ServiceResponse:
+def render_demo_ui(current_user_profile: dict[str, str]) -> str:
+    return render_dashboard_ui(current_user_profile["employee_id"], current_user_profile)
+
+
+def _login_response(body: bytes) -> ServiceResponse:
+    try:
+        payload = _parse_json_body(body)
+    except ValueError as exc:
+        return _error_response(400, str(exc), "Request body must be a valid JSON object.")
+
+    username = payload.get("username")
+    password = payload.get("password")
+    if not isinstance(username, str) or not isinstance(password, str):
+        return _error_response(400, "missing_credentials", "username and password are required.")
+
+    user = authenticate(username.strip(), password)
+    if user is None:
+        return _error_response(401, "invalid_credentials", "账号或密码不正确。")
+
+    token = create_session(user)
+    response = _json_response(
+        {
+            "runtime": RUNTIME_NAME,
+            "service": SERVICE_NAME,
+            "authenticated": True,
+            "redirect_to": "/",
+            "user": user.public_profile(),
+        }
+    )
+    response.headers["Set-Cookie"] = session_cookie(token)
+    return response
+
+
+def _logout_response(headers: dict[str, str] | None) -> ServiceResponse:
+    clear_session(session_token_from_headers(headers))
+    response = _json_response(
+        {
+            "runtime": RUNTIME_NAME,
+            "service": SERVICE_NAME,
+            "authenticated": False,
+            "redirect_to": "/login",
+        }
+    )
+    response.headers["Set-Cookie"] = expired_session_cookie()
+    return response
+
+
+def _auth_required_response(route: str) -> ServiceResponse:
+    if route in {"/", "/demo/ui"}:
+        return _redirect_response("/login")
+    return _error_response(401, "auth_required", "Login is required for this local demo route.")
+
+
+def dispatch_request(
+    method: str,
+    path: str,
+    body: bytes = b"",
+    headers: dict[str, str] | None = None,
+) -> ServiceResponse:
     route = urlparse(path).path
     method = method.upper()
 
     try:
-        if route in {"/", "/demo/ui"}:
+        if route.startswith("/static/"):
             if method != "GET":
-                return _error_response(405, "method_not_allowed", "Use GET for the demo UI.")
-            return _html_response(render_demo_ui())
+                return _error_response(405, "method_not_allowed", "Use GET for static assets.")
+            return _static_response(route)
+
+        if route == "/login":
+            if method != "GET":
+                return _error_response(405, "method_not_allowed", "Use GET for /login.")
+            user = current_user(headers)
+            if user is not None:
+                return _redirect_response("/")
+            return _html_response(render_login_ui())
+
+        if route == "/auth/login":
+            if method != "POST":
+                return _error_response(405, "method_not_allowed", "Use POST for /auth/login.")
+            return _login_response(body)
+
+        if route == "/auth/logout":
+            if method != "POST":
+                return _error_response(405, "method_not_allowed", "Use POST for /auth/logout.")
+            return _logout_response(headers)
 
         if route == "/health":
             if method != "GET":
@@ -1127,6 +1236,31 @@ def dispatch_request(method: str, path: str, body: bytes = b"") -> ServiceRespon
                     "runtime": RUNTIME_NAME,
                 }
             )
+
+        user = current_user(headers)
+        if route == "/auth/me":
+            if method != "GET":
+                return _error_response(405, "method_not_allowed", "Use GET for /auth/me.")
+            if user is None:
+                return _error_response(401, "auth_required", "Login is required.")
+            return _json_response(
+                {
+                    "runtime": RUNTIME_NAME,
+                    "service": SERVICE_NAME,
+                    "authenticated": True,
+                    "user": user.public_profile(),
+                }
+            )
+
+        if user is None:
+            return _auth_required_response(route)
+
+        user_profile = user.public_profile()
+
+        if route in {"/", "/demo/ui"}:
+            if method != "GET":
+                return _error_response(405, "method_not_allowed", "Use GET for the demo UI.")
+            return _html_response(render_demo_ui(user_profile))
 
         if route == "/scenarios":
             if method != "GET":
@@ -1151,7 +1285,7 @@ def dispatch_request(method: str, path: str, body: bytes = b"") -> ServiceRespon
         if route == "/agent/query":
             if method != "POST":
                 return _error_response(405, "method_not_allowed", "Use POST for /agent/query.")
-            return _handle_agent_query(body)
+            return _handle_agent_query(body, user_profile)
     except Exception:
         return _error_response(
             500,
@@ -1161,23 +1295,24 @@ def dispatch_request(method: str, path: str, body: bytes = b"") -> ServiceRespon
 
     return _error_response(404, "not_found", f"Unknown path: {route}")
 
-
 def make_handler() -> type[BaseHTTPRequestHandler]:
     class OfficeAgentRequestHandler(BaseHTTPRequestHandler):
         server_version = "OfficeAgentLocalService/1.0"
 
         def do_GET(self) -> None:
-            self._send(dispatch_request("GET", self.path))
+            self._send(dispatch_request("GET", self.path, headers=dict(self.headers.items())))
 
         def do_POST(self) -> None:
             content_length = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(content_length)
-            self._send(dispatch_request("POST", self.path, body))
+            self._send(dispatch_request("POST", self.path, body, headers=dict(self.headers.items())))
 
         def _send(self, response: ServiceResponse) -> None:
-            body = response.body.encode("utf-8")
+            body = response.body.encode("utf-8") if isinstance(response.body, str) else response.body
             self.send_response(response.status)
             self.send_header("Content-Type", response.content_type)
+            for key, value in response.headers.items():
+                self.send_header(key, value)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)

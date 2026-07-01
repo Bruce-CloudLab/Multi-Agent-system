@@ -36,7 +36,7 @@ Display response
 
 ## Local HTTP Runtime
 
-Start:
+Start the local website runtime from a separate terminal:
 
 ```powershell
 & '.\.venv\Scripts\python.exe' -m office_agent.service_runtime --port 8765
@@ -45,38 +45,44 @@ Start:
 Open:
 
 ```text
-http://127.0.0.1:8765/
+http://127.0.0.1:8765/login
 ```
 
-The root route serves a static browser console with an Agent input. The console
-reads:
+Demo login accounts:
 
 ```text
-POST /agent/query
-GET /scenarios
-GET /demo
-POST /scenario
+it.demo / demo123
+hr.payroll / demo123
 ```
 
-The Agent input sends a natural-language message and employee id into the
-existing LangGraph. The default local test id is `EMP-IT-DEV-0001`.
+After login, the dashboard provides:
 
-The scenario catalog shows all S01-S15 design scenarios. Runnable scenarios can
-be executed from the page; not-connected scenarios are shown as disabled entries
-so the runtime does not pretend to execute paths that are not wired into the
-current graph.
+```text
+Agent query entry
+scenario catalog
+curated demo run
+trace panel
+evidence panel
+raw JSON summary
+```
 
-## Test Operators
+The dashboard sends natural-language requests into the existing LangGraph. The
+logged-in account controls the demo operator identity; the browser does not need
+to expose an editable `employee_id` field.
+
+## Demo Operators
 
 The local mock runtime includes deterministic test employee profiles:
 
 ```text
+login: it.demo / demo123
 employee_id: EMP-IT-DEV-0001
 department: IT Department
 position: Software Developer
 roles: employee, it_staff, developer
 salary_query: denied
 
+login: hr.payroll / demo123
 employee_id: EMP-HR-PAY-0001
 department: HR Department
 position: Payroll Specialist
@@ -84,52 +90,58 @@ roles: employee, hr_staff, payroll_reader
 salary_query: allowed
 ```
 
-These ids are seed data for local graph tests. They are not login accounts or
-authentication tokens. A resolved identity does not bypass permission or audit
-gates.
+These login accounts are local demo seeds. They are not production enterprise
+accounts. A logged-in identity still does not bypass permission or audit gates.
+
+## Browser Walkthrough
+
+1. Open `/login`.
+2. Sign in as `it.demo / demo123`.
+3. Ask `salary query request` or `查一下我的工资`.
+4. Confirm the trace shows the permission/audit path and no salary preview is
+   disclosed.
+5. Log out and sign in as `hr.payroll / demo123`.
+6. Ask the same salary question.
+7. Confirm the salary path is allowed only for the payroll-reader identity.
+8. Run a supported scenario such as `S08` from the scenario list.
 
 ## Endpoint Examples
 
-Health:
+Health remains public:
 
 ```powershell
 Invoke-RestMethod -Uri http://127.0.0.1:8765/health
 ```
 
-Text report:
+Login and reuse the session cookie:
 
 ```powershell
-Invoke-RestMethod -Uri http://127.0.0.1:8765/demo/report
+$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8765/auth/login `
+  -Method Post `
+  -WebSession $session `
+  -ContentType 'application/json' `
+  -Body '{"username":"it.demo","password":"demo123"}'
 ```
 
-Ask the Agent entry:
+Ask the Agent entry with the logged-in identity:
 
 ```powershell
-$json = '{"message":"salary query request","employee_id":"EMP-IT-DEV-0001"}'
-$body = [System.Text.Encoding]::UTF8.GetBytes($json)
 Invoke-RestMethod `
   -Uri http://127.0.0.1:8765/agent/query `
   -Method Post `
+  -WebSession $session `
   -ContentType 'application/json; charset=utf-8' `
-  -Body $body
-```
-
-Authorized payroll-reader salary smoke:
-
-```powershell
-$json = '{"message":"salary query request","employee_id":"EMP-HR-PAY-0001"}'
-$body = [System.Text.Encoding]::UTF8.GetBytes($json)
-Invoke-RestMethod `
-  -Uri http://127.0.0.1:8765/agent/query `
-  -Method Post `
-  -ContentType 'application/json; charset=utf-8' `
-  -Body $body
+  -Body '{"message":"salary query request"}'
 ```
 
 Scenario catalog:
 
 ```powershell
-Invoke-RestMethod -Uri http://127.0.0.1:8765/scenarios
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8765/scenarios `
+  -WebSession $session
 ```
 
 Run one scenario:
@@ -138,8 +150,17 @@ Run one scenario:
 Invoke-RestMethod `
   -Uri http://127.0.0.1:8765/scenario `
   -Method Post `
+  -WebSession $session `
   -ContentType 'application/json' `
   -Body '{"scenario_id":"S08"}'
+```
+
+Text report:
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8765/demo/report `
+  -WebSession $session
 ```
 
 ## S15 Boundary
@@ -149,3 +170,6 @@ checkpoint flow is visible.
 
 `POST /scenario` with `S15` returns the waiting/start state only. It does not
 add a separate ad-hoc resume API.
+
+S15 remains frozen as the portfolio golden path; this iteration only changed the
+browser entry and local demo checkpoint storage reliability.
